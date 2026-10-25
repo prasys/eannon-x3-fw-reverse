@@ -178,11 +178,18 @@ Home screen: `lib/activity/default/libhomelauncher.so`.
 ### 3.2 Format
 - Header magic `JL_UDFIR` at 0x0: JieLi upgrade-firmware container. Header words
   (big-endian) include `0x00000020`, `0x0000e3df`, `0x00000200`, `0x00061000`,
-  `0x0000cff6`. Their meaning (header len / CRCs / payload size) isn't decoded yet.
+  `0x0000cff6`. **Decoded 2026-10-26 (*parsed*, verified by `tools/jl_udfir.py`):**
+  `0x08` u32 `0x20` = length of the CRC'd header block · `0x0c` `0xe3df` = CRC16 over
+  `[0x10, 0x30)` · `0x10` `0x200` = payload offset · `0x14` `0x61000` = payload length ·
+  `0x18` `0xcff6` = CRC16 over the payload `[0x200, 0x61200)` · `0x24` name `JL_690X.BIN` ·
+  `0x30..0x200` zeros. File size `0x61200` = offset + length. CRC16 is poly 0x1021, init 0,
+  no reflection, no final XOR. The payload CRC covers the *encrypted* bytes, so the container
+  can be checked without decrypting. (The header CRC span is only pinned down up to
+  leading zero bytes: any start 0x10–0x12 gives the same value.)
 - Entropy is ~7.99 across 0x0–0x5ffff, so the code is **encrypted/scrambled**
   (JieLi uses a chip-keyed scrambler on flash images; *inferred*, needs confirming
   with public JieLi tooling). Only the lib-banner table around 0xd400 is plaintext.
-- Tail: 0x61000+ is 0xFF padding with a `BOOT_START_FIRST` marker at 0x611e0.
+- Tail: the last bytes of the payload (to 0x61200) are 0xFF padding with a `BOOT_START_FIRST` marker at 0x611e0.
 - **No disassembly possible until it's descrambled.** Out of scope for now. Treat
   MCU behaviour as a black box seen through `mcusrv`'s UART protocol.
 

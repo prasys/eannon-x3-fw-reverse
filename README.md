@@ -85,6 +85,7 @@ The USB hook runs from mdev, independent of the UI, so this works even if the La
 | `tools/build_payload.py` | Builds the payload: stock library + patch B + string tables → `libinfomodule.so`, `.md5`, `BUILD.txt` |
 | `tools/strings/strtab.py` | Extracts and rebuilds the string tables (`extract` / `build` / `check`) |
 | `tools/strings/overrides.json`, `tables_final.json` | Hand fixes, and the finished tables for all languages |
+| `tools/jl_udfir.py` | Parse and verify the MCU image header and both CRCs |
 | `tools/gotres.py`, `tools/annotate_strings.py` | Resolve GOT-relative symbol refs and PC-relative strings in Ghidra exports |
 
 ### Building and deploying the payload

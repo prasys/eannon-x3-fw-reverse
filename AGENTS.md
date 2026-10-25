@@ -59,6 +59,7 @@ If `fw/` is missing: unzip into `fw/soc` and `fw/mcu`, then carve and `unsquashf
 | `tools/usb-diag/gemn_auto.sh` | stick entry point: diagnostics, then calls the patch scripts |
 | `tools/usb-patch/x3patch/patch.sh` | install or uninstall the nvm library override |
 | `tools/usb-patch/wifi40/wifi40.sh` | HT40 Wi-Fi patch with auto-undo |
+| `tools/jl_udfir.py` | parse and verify the MCU image header and CRCs |
 | `tools/gotres.py`, `tools/annotate_strings.py` | resolve GOT refs and PC-relative strings in Ghidra exports |
 
 Host (macOS): Ghidra 12.2 headless (`JAVA_HOME=/opt/homebrew/opt/openjdk@21`; check the export ends with

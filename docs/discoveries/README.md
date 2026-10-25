@@ -13,4 +13,5 @@ Short, current summaries. Each links back to the evidence in `docs/FINDINGS.md`.
 | Wi-Fi AP, Android Auto, CarPlay | [wifi-ap-and-android-auto.md](wifi-ap-and-android-auto.md) | HT40 verified |
 | USB autorun hook | [usb-autorun-hook.md](usb-autorun-hook.md) | working |
 | Firmware layout, storage, boot | [storage-and-boot.md](storage-and-boot.md) | parsed |
+| MCU image header | [mcu-image-header.md](mcu-image-header.md) | decoded, payload encrypted |
 | Reboot incident | [reboot-incident.md](reboot-incident.md) | mitigated |

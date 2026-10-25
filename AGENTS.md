@@ -56,7 +56,7 @@ Only applies when Orca is available (`orca worktree current --json` works). Othe
 Machine-readable routing is in `agents/delegation.json`; summary:
 - **Claude (orchestrator):** RE judgement, patch design, anything that touches the unit, the stick or MCU safety, verifying worker output, commits.
 - **Codex (builder):** tools and scripts, shims, tests, diff review. `orca worktree create --name <task> --no-parent --agent codex --prompt "<brief>" --json`.
-- **OpenCode + `opencode/deepseek-v4.1-flash` (cheap):** grep and summarise exports, call-site lists, doc drift checks, first-draft notes, mechanical edits. Run `opencode run -m opencode/deepseek-v4.1-flash "<brief>"` in a worktree. `orca agent launch --agent opencode` did not confirm a launch in testing, so use `opencode run`.
+- **OpenCode + DeepSeek V4.1 Flash (cheap):** grep and summarise exports, call-site lists, doc drift checks, first-draft notes, mechanical edits. `orca agent launch --agent opencode2 --worktree <sel> --prompt "<brief>" --json` (no `--model`: it uses OpenCode's configured model, currently DeepSeek V4.1 Flash). Check the terminal afterwards; if the prompt is still in the input box, send a bare Enter (`orca terminal send --terminal <handle> --enter`). The agent id `opencode` did not launch; fallback is `opencode run -m opencode/deepseek-v4.1-flash "<brief>"`.
 - Every worker uses its own worktree and reads `fw/` from the main checkout by absolute path (worktrees do not contain the gitignored `fw/`). Nobody else opens `fw/gh`, pushes, or touches `/Volumes/X3DIAG` or the unit.
 - Worker output is a lead, not a fact: re-check every address, offset and key against the files before it goes into `docs/`.
 

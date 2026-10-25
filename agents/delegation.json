@@ -8,28 +8,47 @@
   "orca": "1.4.240",
   "codex": "codex-cli 0.163.0",
   "opencode": "v2.0.13",
-  "smoke_tests": "read-only task 'list the topic files in docs/discoveries/README.md' returned the correct 11 names from both Codex (via orca agent launch) and OpenCode (via opencode run)"
+  "smoke_tests": "read-only task 'list the topic files in docs/discoveries/README.md' returned the correct 11 names from Codex (orca agent launch --agent codex), OpenCode (opencode run) and opencode2 (orca agent launch --agent opencode2, DeepSeek V4.1 Flash, 4 s, $0.00 shown in the TUI)"
  },
  "roles": {
   "orchestrator": {
    "who": "Claude Code (the main session)",
-   "does": ["reverse-engineering judgement and patch design", "anything touching the unit, the USB stick or MCU safety rules", "verifying worker output against the files before it reaches docs", "commits and pushes"]
+   "does": [
+    "reverse-engineering judgement and patch design",
+    "anything touching the unit, the USB stick or MCU safety rules",
+    "verifying worker output against the files before it reaches docs",
+    "commits and pushes"
+   ]
   },
   "builder": {
    "who": "Codex",
    "launch_new_checkout": "orca worktree create --name <task> --no-parent --agent codex --prompt \"<brief>\" --json",
    "launch_existing_worktree": "orca agent launch --agent codex --worktree id:<repoId>::<path> --prompt \"<brief>\" --json",
    "status": "works (launch returned a terminal handle, prompt handed to terminal, task completed)",
-   "good_for": ["writing or refactoring tools and scripts (extract.py, repack.py, shims)", "cross-compile setup for the ARM shim", "tests and checks for existing tools", "reviewing a diff"]
+   "good_for": [
+    "writing or refactoring tools and scripts (extract.py, repack.py, shims)",
+    "cross-compile setup for the ARM shim",
+    "tests and checks for existing tools",
+    "reviewing a diff"
+   ]
   },
   "cheap": {
    "who": "OpenCode with DeepSeek v4.1 flash",
    "model": "opencode/deepseek-v4.1-flash",
    "alternate_model": "opencode-go/deepseek-v4.1-flash",
-   "launch": "cd <worktree path> && opencode run -m opencode/deepseek-v4.1-flash \"<brief>\"",
-   "orca_launch_status": "NOT working: `orca agent launch --agent opencode` returned agent_session_operation_unknown twice (also with --retry-launch) and no terminal appeared. Use `opencode run`, from a shell or `orca terminal create --worktree <sel> --command ...`.",
-   "note": "`opencode run` goes through the background service and has no --timeout: bound the task in the brief. Do not pass --auto outside a disposable worktree.",
-   "good_for": ["grep and summarise decompile exports in fw/decomp", "list call sites or callers of a function", "cross-check docs against each other for drift", "draft discovery notes from FINDINGS text", "mechanical edits and formatting", "first-pass review of translations in tools/strings/tables_final.json"]
+   "launch": "orca agent launch --agent opencode2 --worktree id:<repoId>::<path> --prompt \"<brief>\" --json   (do NOT pass --model)",
+   "orca_launch_status": "works with agent id `opencode2` (the id `opencode` returned agent_session_operation_unknown). Quirk seen: the prompt was typed into the TUI but not submitted; after launch, read the terminal and, if the prompt is still in the input box, send a bare Enter (`orca terminal send --terminal <handle> --enter`). Then `orca terminal wait --for tui-idle --timeout-ms <n>` and `orca terminal read`.",
+   "good_for": [
+    "grep and summarise decompile exports in fw/decomp",
+    "list call sites or callers of a function",
+    "cross-check docs against each other for drift",
+    "draft discovery notes from FINDINGS text",
+    "mechanical edits and formatting",
+    "first-pass review of translations in tools/strings/tables_final.json"
+   ],
+   "model_note": "opencode2 refuses --model (invalid_argument: 'does not support launch-time model selection'). It runs the model from OpenCode's own config, which here is already DeepSeek V4.1 Flash (OpenCode Go). To pin it for this repo, set \"model\" in a repo-level opencode config; do not rely on the default if the global config changes.",
+   "fallback_launch": "cd <worktree path> && opencode run -m opencode/deepseek-v4.1-flash \"<brief>\"",
+   "note": "`opencode run` has no --timeout: bound the task in the brief. Do not pass --auto outside a disposable worktree."
   }
  },
  "rules_for_every_worker": [

@@ -1,0 +1,45 @@
+{
+ "name": "X3 agent delegation",
+ "version": 1,
+ "docs": "AGENTS.md section 'Delegating under Orca'",
+ "applies_when": "Orca is available: `orca worktree current --json` succeeds from the repo. If not, ignore this file and do the work directly.",
+ "verified": {
+  "date": "2026-10-26",
+  "orca": "1.4.240",
+  "codex": "codex-cli 0.163.0",
+  "opencode": "v2.0.13",
+  "smoke_tests": "read-only task 'list the topic files in docs/discoveries/README.md' returned the correct 11 names from both Codex (via orca agent launch) and OpenCode (via opencode run)"
+ },
+ "roles": {
+  "orchestrator": {
+   "who": "Claude Code (the main session)",
+   "does": ["reverse-engineering judgement and patch design", "anything touching the unit, the USB stick or MCU safety rules", "verifying worker output against the files before it reaches docs", "commits and pushes"]
+  },
+  "builder": {
+   "who": "Codex",
+   "launch_new_checkout": "orca worktree create --name <task> --no-parent --agent codex --prompt \"<brief>\" --json",
+   "launch_existing_worktree": "orca agent launch --agent codex --worktree id:<repoId>::<path> --prompt \"<brief>\" --json",
+   "status": "works (launch returned a terminal handle, prompt handed to terminal, task completed)",
+   "good_for": ["writing or refactoring tools and scripts (extract.py, repack.py, shims)", "cross-compile setup for the ARM shim", "tests and checks for existing tools", "reviewing a diff"]
+  },
+  "cheap": {
+   "who": "OpenCode with DeepSeek v4.1 flash",
+   "model": "opencode/deepseek-v4.1-flash",
+   "alternate_model": "opencode-go/deepseek-v4.1-flash",
+   "launch": "cd <worktree path> && opencode run -m opencode/deepseek-v4.1-flash \"<brief>\"",
+   "orca_launch_status": "NOT working: `orca agent launch --agent opencode` returned agent_session_operation_unknown twice (also with --retry-launch) and no terminal appeared. Use `opencode run`, from a shell or `orca terminal create --worktree <sel> --command ...`.",
+   "note": "`opencode run` goes through the background service and has no --timeout: bound the task in the brief. Do not pass --auto outside a disposable worktree.",
+   "good_for": ["grep and summarise decompile exports in fw/decomp", "list call sites or callers of a function", "cross-check docs against each other for drift", "draft discovery notes from FINDINGS text", "mechanical edits and formatting", "first-pass review of translations in tools/strings/tables_final.json"]
+  }
+ },
+ "rules_for_every_worker": [
+  "Work only in your own Orca worktree; never edit files in the main checkout.",
+  "Read-only everywhere else: /Volumes/X3DIAG, the head unit, and fw/ (read it from the main checkout by absolute path; git worktrees do not contain the gitignored fw/ dir).",
+  "Do not open or write the Ghidra project fw/gh (it locks). For new analysis import into a private project dir under your scratchpad.",
+  "No git push, no new remotes, no commits to main. Commit on your own branch only if asked.",
+  "Follow AGENTS.md: cite only what a tool showed, tag evidence levels, no personal data from captures, no raw NAND reads, never write ttyS1 or send MCU cmd 0x75.",
+  "Return facts with file and line or address evidence. The orchestrator re-checks every address and offset before it goes into docs."
+ ],
+ "brief_template": "Task: <one sentence>. Repo: /Users/pradeesh/orca/projects/eanon-fw (read AGENTS.md first). Inputs: <paths; fw/ lives at /Users/pradeesh/orca/projects/eanon-fw/fw, read-only>. Output: <exact deliverable and where to write it, inside your worktree>. Limits: <time/size bounds>. Do not: push, touch the unit or USB stick, write outside your worktree. Report: what you did, evidence (file:line / address) for every claim, and anything you could not verify.",
+ "worktree_note": "Main checkout worktree id: id:29393f44-aadd-4452-9750-b0a449892f27::/Users/pradeesh/orca/projects/eanon-fw"
+}

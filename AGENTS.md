@@ -51,6 +51,15 @@ Verified 2026-10-26: `soc/ISPBOOOT.BIN` and `mcu/mcu8368u.bin` unzip from the tw
 `fw/gh/` is the Ghidra project `x3` (the 9 libraries above, analysed, 70 MB); `fw/decomp/regen/` has fresh exports of them from 2026-10-26 (all ended with `exported N functions`). To add a binary: `analyzeHeadless fw/gh x3 -import <file> -scriptPath ~/.claude/skills/reverse-engineering/scripts/ghidra -postScript DecompileExport.java <out.c>`.
 If `fw/` is missing: unzip into `fw/soc` and `fw/mcu`, then carve and `unsquashfs` per FINDINGS section 4.
 
+## Delegating under Orca (optional)
+Only applies when Orca is available (`orca worktree current --json` works). Otherwise ignore this and work directly.
+Machine-readable routing is in `agents/delegation.json`; summary:
+- **Claude (orchestrator):** RE judgement, patch design, anything that touches the unit, the stick or MCU safety, verifying worker output, commits.
+- **Codex (builder):** tools and scripts, shims, tests, diff review. `orca worktree create --name <task> --no-parent --agent codex --prompt "<brief>" --json`.
+- **OpenCode + `opencode/deepseek-v4.1-flash` (cheap):** grep and summarise exports, call-site lists, doc drift checks, first-draft notes, mechanical edits. Run `opencode run -m opencode/deepseek-v4.1-flash "<brief>"` in a worktree. `orca agent launch --agent opencode` did not confirm a launch in testing, so use `opencode run`.
+- Every worker uses its own worktree and reads `fw/` from the main checkout by absolute path (worktrees do not contain the gitignored `fw/`). Nobody else opens `fw/gh`, pushes, or touches `/Volumes/X3DIAG` or the unit.
+- Worker output is a lead, not a fact: re-check every address, offset and key against the files before it goes into `docs/`.
+
 ## Tools
 | Tool | Use |
 | --- | --- |

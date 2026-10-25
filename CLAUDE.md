@@ -27,8 +27,8 @@ when priorities change. Don't let them drift apart.
   per boot, and a 30 s evdev + UART-counter capture window).
 
 Firmware images, extracted filesystems, decompiler output and USB captures are **not**
-in the repo (see `.gitignore`). Recreate them in the session scratchpad:
-- Inputs: `~/Downloads/X3_20250718.zip` (ISPBOOOT.BIN), `~/Downloads/X3-series MCU_240723.zip`.
+in git (see `.gitignore`). They live in the local `fw/` dir, described in `AGENTS.md`; recreate if missing:
+- Inputs (in the gitignored `fw/` dir, never commit): `fw/X3_20250718.zip` (ISPBOOOT.BIN), `fw/X3-series MCU_240723.zip`.
 - Carve + `unsquashfs` per `docs/FINDINGS.md` section 4 (offsets in 2.3).
 
 ## Working rules

@@ -38,9 +38,18 @@ Overview: `README.md`.
 - Commit work that is only in a worktree or scratchpad. A previous worktree was lost with uncommitted tooling.
 
 ## Inputs (not in repo)
-`~/Downloads/X3_20250718.zip` (`ISPBOOOT.BIN`) and `~/Downloads/X3-series MCU_240723.zip`. Carve and
-`unsquashfs` per `docs/FINDINGS.md` section 4. The stock `libinfomodule.so` is also copied to the stick at
-`x3patch/stock/` by `patch.sh`.
+## Local firmware workspace (`fw/`, gitignored, never commit)
+Verified 2026-10-26: `soc/ISPBOOOT.BIN` and `mcu/mcu8368u.bin` unzip from the two zips with the md5s in
+`docs/FINDINGS.md` section 1, and `parts/spapp.bin` matches the 2.3 offsets.
+| Path | Contents |
+| --- | --- |
+| `fw/*.zip` | the original downloads |
+| `fw/soc/ISPBOOOT.BIN`, `fw/mcu/mcu8368u.bin` | unzipped images |
+| `fw/parts/` | carved partitions (`rootfs.bin`, `spsdk.bin`, `spapp.bin`, `opt.bin`, `kernel.bin`, …) and the ISP scripts |
+| `fw/fs/` | `unsquashfs` output: `rootfs/`, `spsdk/`, `spapp/`, `opt/` (read only, never execute anything in it) |
+| `fw/decomp/` | Ghidra exports (`*.c`, `.ann.c` with strings annotated) and disassembly for `libinfomodule`, `libsetupmodule`, `libcomdspviews`, `libcomeqviews`, `libcomviews`, `libapis`, `libsysset`, `libmcusrv`, `mcusrv` |
+Not kept: Ghidra project databases. Re-run the headless export (CLAUDE.md toolchain notes) to regenerate or extend.
+If `fw/` is missing: unzip into `fw/soc` and `fw/mcu`, then carve and `unsquashfs` per FINDINGS section 4.
 
 ## Tools
 | Tool | Use |

@@ -1,0 +1,26 @@
+# Firmware inputs and anything extracted/derived from them
+*.BIN
+*.bin
+*.zip
+fw/
+parts/
+fs/
+decomp/
+gh/
+*.gpr
+*.rep/
+
+# USB diagnostic captures (contain personal data)
+diag/
+log_mdevscr_usb.txt
+*.ini
+
+.DS_Store
+._*
+
+# patch payloads (built from firmware, not committed)
+tools/usb-patch/x3patch/payload/
+tools/usb-patch/x3patch/log.txt
+
+__pycache__/
+*.pyc

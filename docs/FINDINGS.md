@@ -677,3 +677,21 @@ are larger than the image slots in 2.3.
 | `sd.db` | 4,918 | media DB? |
 | **garbled name** (`????…`) | 4,918 | same size as `sd.db` / one `SETUPMENU.ini` copy. Possibly a stray QSettings/QSaveFile temp file or a YAFFS name issue. Check from a snapshot copy; don't delete |
 | `touch_conf`, `touch_conf.md5`, Apple auth cache, `dfb_crash.dump` | — | referenced by init scripts (2.6) |
+
+---
+
+## 12. Shipped patch state on the stick (recovered 2026-10-25, after the rorqual worktree was lost)
+*runtime* = `x3patch/log.txt` and `wifi40/log.txt` on the stick; *parsed* = checks run on the files.
+- **Installed on the unit by the 21:04 run:** `/media/flash/nvm/libinfomodule.so` md5
+  `68f0bcf18a4790f749e47fa44bf303c5` (patch B + all-language UI strings), replacing the
+  stock-copy proof run. Needs a cold boot to load; **not yet confirmed loaded** (no run after 21:04).
+  Undo: `x3patch/mode` = `uninstall`.
+- **wifi40:** `ht_capab=[HT40+]…` added to `/media/flash/nvm/softap.conf`; after a cold boot
+  hostapd came up with `secondary_channel=1`, `cur_bwmode=2` (boots 5eced8c3, dbce6923). Backup is
+  `softap.conf.pre-wifi40` on the unit.
+- **Rebuild:** `tools/build_payload.py <stock .so> tools/strings/tables_final.json <outdir>` gives
+  md5 `0b1ab572…` (not the stick's `68f0bcf1…`: the blob is laid out differently). *Parsed*:
+  all 417 strings × 20 language tables decode identically between the two. The stick payload was
+  built by a script that was never committed; `tables_final.json` is its recovered input.
+  If you want the rebuilt one on the stick, its md5 goes in `payload/libinfomodule.so.md5`.
+- `nl` has no table in this build (NULL), so it can't be translated by this method (see strtab.py).

@@ -1,0 +1,11 @@
+{
+ "name": "patch A: EQ restore gate (NOT delivered)",
+ "docs": "docs/FINDINGS.md section 5.2",
+ "file": "libsetupmodule.so (X3_20250718)",
+ "file_offset": "0xaa1e",
+ "old_bytes": "90 b1",
+ "new_bytes": "12 e0",
+ "meaning": "cbz r0,0xaa46 -> b 0xaa46: exeSetupEq always reads the saved EQ instead of defaults",
+ "apply_only_if": "EQ resets while audio.EQ.custom is intact on flash",
+ "evidence": "assembly; untested"
+}

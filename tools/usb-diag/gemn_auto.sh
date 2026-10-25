@@ -17,6 +17,8 @@ USB=$(dirname "$0")
 
 # library override installer / status check (tools/usb-patch), runs first
 [ -f "$USB/x3patch/patch.sh" ] && sh "$USB/x3patch/patch.sh"
+# Wi-Fi AP 40 MHz patch / health check (tools/usb-patch/wifi40), before the wifi/ capture
+[ -f "$USB/wifi40/wifi40.sh" ] && sh "$USB/wifi40/wifi40.sh"
 OUT=$USB/diag
 RAM=/tmp/x3diag
 NVM=/media/flash/nvm/Sunplus
@@ -86,6 +88,16 @@ cp -a /tmp/sp/log "$SNAP/sp_log" 2>/dev/null
 for i in 4 3 2 1; do [ -f "$RAM/live.log.$i" ] && cat "$RAM/live.log.$i"; done > "$SNAP/live.log"
 [ -f "$RAM/live.log" ] && cat "$RAM/live.log" >> "$SNAP/live.log"
 
+# redaction for anything copied to the stick: Wi-Fi secrets, phone serials, and MACs cut
+# to their OUI (the Android Auto stack logs "retpassphrase:<psk>" and "serial[..]" /
+# "serail[..]")
+RED='s/^((wpa_)?passphrase|(wpa_)?psk|wep_key[0-9]*|wpa_password)=.*/\1=<redacted>/
+s/([Pp]assphrase|[Pp]assword|psk)([:=] ?)[^,[:space:]]*/\1\2<redacted>/g
+s/(ser(ia|ai)l\[)[^]]*\]/\1<redacted>]/g
+s/(([0-9a-fA-F]{2}:){3})([0-9a-fA-F]{2}:){2}[0-9a-fA-F]{2}/\1xx:xx:xx/g'
+sed -i -r "$RED" "$SNAP/logcat.txt" "$SNAP/live.log" 2>/dev/null
+[ -d "$SNAP/sp_log" ] && find "$SNAP/sp_log" -type f -exec sed -i -r "$RED" {} \; 2>/dev/null
+
 # lines new since the previous snapshot, by logcat timestamp ("MM-DD HH:MM:SS.mmm")
 PAT='setSpeakerDelay|[Dd]elay|[Ee]mperor|[Ff]ilter|[Ll]ou?ndness|[Vv][Bb]ass|[Bb]alance|[Ff]ader|APP_CMD|[Dd]ps|[Bb]ongiovi|[Ss]tereo|[Ss]ub[Ww]oofer|DSP|dsp|set eq failed'
 SINCE=$(cat "$RAM/since.$BOOT_ID" 2>/dev/null)
@@ -102,6 +114,99 @@ NEWEST=$(tail -n 1 "$SNAP/window.log" | cut -c1-18)
 [ -n "$NEWEST" ] && echo "$NEWEST" > "$RAM/since.$BOOT_ID"
 
 sync
+
+# --- Wi-Fi AP / Android Auto (read-only; secrets and MACs redacted) ---
+# networkmanager reads /media/flash/nvm/softap.conf if present, else the ROM copy,
+# and starts /usr/local/bin/hostapd with ctrl_interface=/var/run/hostapd.
+W=$SNAP/wifi
+mkdir -p "$W"
+SOFTAP_NVM=/media/flash/nvm/softap.conf
+SOFTAP_ROM=/usr/local/etc/wifimanager/softap.conf
+HCLI="/usr/local/bin/hostapd_cli -p /var/run/hostapd -i wlan0"
+{
+	echo "== processes"; ps | grep -E 'hostapd|networkmanager|udhcpd|wpa_supplicant|aa_|wifi' | grep -v grep
+	for p in $(pidof hostapd); do
+		echo "== hostapd $p cmdline"; tr '\0' ' ' < /proc/$p/cmdline; echo
+	done
+	echo "== /var/run/hostapd"; ls -la /var/run/hostapd
+	echo "== softap.conf files"
+	for f in "$SOFTAP_NVM" "$SOFTAP_ROM"; do
+		[ -f "$f" ] && { stat -c '%y %s %n' "$f"; md5sum "$f"; } || echo "missing: $f"
+	done
+} > "$W/ap.txt" 2>&1
+for f in "$SOFTAP_NVM" "$SOFTAP_ROM"; do
+	[ -f "$f" ] && sed -r "$RED" "$f" > "$W/$(echo "$f" | cut -d/ -f2-3 | tr / _)_softap.conf"
+done
+[ -f "$SOFTAP_NVM" ] && diff -u "$W/usr_local_softap.conf" "$W/media_flash_softap.conf" > "$W/softap_nvm_vs_rom.diff" 2>&1
+sync; echo "step wifi files done" >> "$SNAP/system.txt"; sync
+RTW=/proc/net/rtl8821cs/wlan0
+# live AP/driver state into dir $1, AA/AP log lines from log file $2
+wifi_live() {
+	mkdir -p "$1"
+	{
+		for c in status get_config all_sta; do
+			echo "== hostapd_cli $c"; $HCLI $c
+		done
+	} 2>&1 | sed -r "$RED" > "$1/hostapd_cli.txt"
+	{
+		echo "== ifconfig wlan0"; ifconfig wlan0
+		echo "== ip addr"; ip addr
+		echo "== /proc/net/wireless"; cat /proc/net/wireless
+		# rtw driver status dumps only (no register dumps)
+		for e in ap_info all_sta_info bw_mode ht_option chan_plan country_code; do
+			echo "== $RTW/$e"; cat "$RTW/$e"
+		done
+		echo "== rtw proc entries"; ls "$RTW"
+	} 2>&1 | sed -r "$RED" > "$1/iface.txt"
+	grep -E 'hostapd|[Ss]oft[Aa][Pp]|[Ww]ifi[Aa]p|wlan0|[Aa]ndroid[Aa]uto|aa_manager|aa_accessory|AAS|RFCOMM|8765|[Cc]ar[Pp]lay' \
+		"$2" > "$1/aa_events.txt" 2>&1
+}
+wifi_live "$W" "$SNAP/window.log"
+grep -iE 'rtw|rtl8821|wlan0|80211' "$SNAP/dmesg.txt" | sed -r "$RED" > "$W/dmesg_wifi.txt" 2>&1
+sync; echo "step wifi done" >> "$SNAP/system.txt"; sync
+
+# --- phone watch: the hook runs once, at plug-in. With the stick left in that's at
+# boot, before the phone joins the AP, so if no station is connected yet, poll hostapd
+# every 5 s for up to 15 min. When one joins, wait 30 s for projection to start, then
+# capture wifi_sta/ (same files as wifi/ plus the log since boot) and sample the link
+# rate/RSSI every 5 s for 2 min. Stops quietly if the stick is pulled.
+num_sta() { $HCLI status 2>/dev/null | sed -n 's/^num_sta\[0\]=//p'; }
+if [ "$(num_sta)" = 0 ] && ! { [ -f "$RAM/watch.pid" ] && kill -0 "$(cat "$RAM/watch.pid")" 2>/dev/null; }; then
+	(
+		trap '' HUP
+		i=0
+		while [ $i -lt 180 ]; do
+			sleep 5
+			[ -d "$SNAP" ] || exit 0
+			[ "$(num_sta)" -gt 0 ] 2>/dev/null && break
+			i=$((i + 1))
+		done
+		if [ $i -ge 180 ]; then
+			echo "sta watch: no phone joined within 15 min" >> "$SNAP/system.txt"; sync; exit 0
+		fi
+		echo "sta watch: phone joined $(date '+%H:%M:%S')" >> "$SNAP/system.txt"
+		sleep 30
+		[ -d "$SNAP" ] || exit 0
+		WS=$SNAP/wifi_sta
+		mkdir -p "$WS"
+		{
+			for i in 4 3 2 1; do [ -f "$RAM/live.log.$i" ] && cat "$RAM/live.log.$i"; done
+			[ -f "$RAM/live.log" ] && cat "$RAM/live.log"
+		} | sed -r "$RED" > "$WS/live.log"
+		wifi_live "$WS" "$WS/live.log"
+		sync; echo "sta watch: snapshot done $(date '+%H:%M:%S')" >> "$SNAP/system.txt"; sync
+		j=0
+		while [ $j -lt 24 ] && [ -d "$WS" ]; do
+			echo "== t=$((j * 5))s $(date '+%H:%M:%S')"
+			grep -E 'macaddr|bwmode|ht_bitrate|vht_bitrate|_tp |bitrate_100kbps|rssi' "$RTW/all_sta_info"
+			$HCLI all_sta | grep -E '^[0-9a-f]{2}:|rate|signal|connected_time|_bytes'
+			sleep 5
+			j=$((j + 1))
+		done 2>&1 | sed -r "$RED" > "$WS/link_samples.txt"
+		sync; echo "sta watch: link samples done $(date '+%H:%M:%S')" >> "$SNAP/system.txt"; sync
+	) > /dev/null 2>&1 &
+	echo $! > "$RAM/watch.pid"
+fi
 
 # --- extras: only when <usb root>/extras.flag exists (all read-only) ---
 if [ -f "$USB/extras.flag" ]; then

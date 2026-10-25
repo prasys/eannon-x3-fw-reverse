@@ -1,0 +1,8 @@
+{
+ "name": "UI string fixes (all languages)",
+ "docs": "docs/FINDINGS.md sections 11 and 12",
+ "file": "libinfomodule.so string tables (21 x 417 entries; nl has no table)",
+ "source": "tools/strings/tables_final.json (+ tools/strings/overrides.json)",
+ "build": "python3 -I tools/build_payload.py <stock .so> tools/strings/tables_final.json <outdir>",
+ "evidence": "parsed: rebuilt tables decode identically to the payload on the stick; on-unit display not yet checked"
+}

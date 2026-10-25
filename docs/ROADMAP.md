@@ -2,11 +2,10 @@
 
 > **Top item (2026-10-25):** FINDINGS 9. Emperor = DSP master. Its saved state is
 > skipped at boot whenever the MCU reports a memory reset (`loadSystemSettings`
-> 0x41ef1d28). Patch B (1 byte, `libinfomodule.so` @0x41d2b) is built and not installed.
-> Ship B + A together via the nvm library override (option A below), after the
-> override is proven with an unmodified copy and a USB uninstall script is on the stick.
-> **Status:** override proven (FINDINGS 10); `tools/usb-patch` install/uninstall works.
-> Next: stage patch B payload, reboot, then the overnight test.
+> 0x41ef1d28). Patch B (1 byte, `libinfomodule.so` @0x41d2b) plus the language strings
+> were installed through the nvm override by the 21:04 USB run (FINDINGS 12).
+> **Status:** installed, not yet confirmed loaded. Next: cold boot, check `x3patch/log.txt`
+> shows the nvm copy mapped, then the overnight Emperor test. wifi40 is done (FINDINGS 12).
 
 Ordered by value and risk. Each item points to its evidence in `FINDINGS.md`.
 

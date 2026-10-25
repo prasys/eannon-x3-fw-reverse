@@ -1,0 +1,8 @@
+{
+ "name": "wifi40: HT40 for the Wi-Fi AP",
+ "docs": "docs/FINDINGS.md sections 8.5 and 12",
+ "file": "/media/flash/nvm/softap.conf (on the unit)",
+ "change": "add line ht_capab=[HT40+][SHORT-GI-20][SHORT-GI-40] ([HT40-] for ch 40/48/56/64/153/161)",
+ "delivery": "tools/usb-patch/wifi40/wifi40.sh (auto-undo if hostapd does not come up)",
+ "evidence": "runtime: after cold boots hostapd shows secondary_channel=1, driver cur_bwmode=2"
+}

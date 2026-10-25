@@ -1,0 +1,13 @@
+{
+ "name": "patch B: Emperor restore",
+ "docs": "docs/FINDINGS.md section 9",
+ "file": "libinfomodule.so (X3_20250718, /application/lib/module/default/)",
+ "stock_md5": "f00b52a739bb333307ee9a841bd02369",
+ "patched_md5": "fae35255cfc28d530fa100af5cab4c4d",
+ "file_offset": "0x41d2b",
+ "old_byte": "0x80",
+ "new_byte": "0xb8",
+ "meaning": "00 f0 fc 80 (beq.w 0x41ef1f24) -> 00 f0 fc b8 (b.w 0x41ef1f24): SetupExec::loadSystemSettings always takes the restore path, even when the MCU RstMemory flag is set",
+ "delivery": "nvm library override (tools/usb-patch/x3patch)",
+ "evidence": "assembly (disassembly checked); behaviour on the unit not yet confirmed"
+}

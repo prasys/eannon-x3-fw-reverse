@@ -21,7 +21,9 @@ personal data; see `.gitignore`).
 | `docs/MAP.md` | Where things live: partitions, libraries, functions, INI keys, boot files |
 | `docs/MCU_PROTOCOL.md` | SoC to MCU UART framing, CRC, command tables |
 | `docs/ROADMAP.md` | Prioritised next steps and fix-delivery options |
-| `CLAUDE.md` | Working rules and toolchain notes for the AI-assisted sessions |
+| `AGENTS.md` / `CLAUDE.md` | Working rules, gotchas and toolchain notes for AI agents |
+| `docs/discoveries/` | One short file per topic (Emperor bug, EQ gate, MCU protocol, nvm override, strings, Wi-Fi/AA, USB hook, storage, incident) |
+| `patches/` | Byte-level descriptors of each patch |
 
 ## What we learned (headlines)
 - **Emperor (DSP master) is not restored after a short or long off** (FINDINGS 5, 9). Emperor

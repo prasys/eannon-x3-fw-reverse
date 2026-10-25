@@ -48,7 +48,7 @@ Verified 2026-10-26: `soc/ISPBOOOT.BIN` and `mcu/mcu8368u.bin` unzip from the tw
 | `fw/parts/` | carved partitions (`rootfs.bin`, `spsdk.bin`, `spapp.bin`, `opt.bin`, `kernel.bin`, …) and the ISP scripts |
 | `fw/fs/` | `unsquashfs` output: `rootfs/`, `spsdk/`, `spapp/`, `opt/` (read only, never execute anything in it) |
 | `fw/decomp/` | Ghidra exports (`*.c`, `.ann.c` with strings annotated) and disassembly for `libinfomodule`, `libsetupmodule`, `libcomdspviews`, `libcomeqviews`, `libcomviews`, `libapis`, `libsysset`, `libmcusrv`, `mcusrv` |
-Not kept: Ghidra project databases. Re-run the headless export (CLAUDE.md toolchain notes) to regenerate or extend.
+`fw/gh/` is the Ghidra project `x3` (the 9 libraries above, analysed, 70 MB); `fw/decomp/regen/` has fresh exports of them from 2026-10-26 (all ended with `exported N functions`). To add a binary: `analyzeHeadless fw/gh x3 -import <file> -scriptPath ~/.claude/skills/reverse-engineering/scripts/ghidra -postScript DecompileExport.java <out.c>`.
 If `fw/` is missing: unzip into `fw/soc` and `fw/mcu`, then carve and `unsquashfs` per FINDINGS section 4.
 
 ## Tools

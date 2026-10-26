@@ -7,6 +7,11 @@
 > **Status:** installed, not yet confirmed loaded. Next: cold boot, check `x3patch/log.txt`
 > shows the nvm copy mapped, then the overnight Emperor test. wifi40 is done (FINDINGS 12).
 
+> **Update (2026-10-26):** patch B's `libinfomodule` is confirmed mapped from nvm (FINDINGS 14); overnight Emperor test still pending.
+> Explorations merged: Home date (parked: nvm override does not reach plugins), auto DST, AA identity (bind-mount route),
+> reverse guide lines (`libapis` nvm override, test script ready). See `docs/discoveries/`. The reflash path (`repack.py`) now unlocks
+> the date and AA-XML fixes, so it moves up.
+
 Ordered by value and risk. Each item points to its evidence in `FINDINGS.md`.
 
 ## Bug 1: Emperor / DSP settings not remembered (top priority)

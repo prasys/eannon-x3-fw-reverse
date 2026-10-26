@@ -127,3 +127,11 @@ delay).
 | hostapd | `/usr/local/bin/hostapd` v2.10-rtw, **no 802.11ac support compiled in**; HT40 OK |
 | Wi-Fi driver | `spsdk/drivers/8821cs.ko rtw_vht_enable=2` (`init.rc:347`) |
 | On-unit tools | `hostapd_cli`, `wpa_cli` (no `iw`) |
+
+## Added 2026-10-26 (see FINDINGS 14)
+| What | Where |
+| --- | --- |
+| AA car identity (make/model/year) | `spapp/etc/Androidauto/androidauto_config.xml` `CarInfo`; path string in `libandroidautomodule.so` file 0x37954 |
+| Reverse guide-line bitmap / palette | `libapis.so.1.0.0` file 0x623b4 (1024x233, 8bpp) / 0x61fb4; position immediates at 0x5065a |
+| Driving side setting | `SETUPMENU.ini` `system.RightDrive` |
+| Clock path | MCU 0x36/0x3d → `MCUControlPrivate::updateSystemTime/Date` → `SetupExec::setSystemTime/Date` → `stime` |

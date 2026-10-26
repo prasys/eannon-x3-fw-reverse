@@ -717,3 +717,20 @@ are larger than the image slots in 2.3.
   `QPluginLoader`). *Runtime* (2026-10-26): with the patched copy in `/media/flash/nvm` and a cold boot, the Launcher
   still mapped only the `/tmp/sp/application/...` copy, so the nvm override does not reach plugins. Parked until a
   reflash path exists (or a bind mount before Launcher starts).
+
+## 14. Patch B confirmed loaded; nvm override scope; exploration results (2026-10-26)
+- **Patch B is live.** After a cold boot, `x3patch/log.txt` (15:05 and 15:08 runs) shows Launcher pid 711 mapping
+  `libinfomodule.so` from both `/tmp/sp/application/lib/module/default/` and `/tmp/sp/media/flash/nvm/libinfomodule.so`; nvm copy md5
+  `68f0bcf18a4790f749e47fa44bf303c5`. *runtime*. Whether the nvm copy wins the symbol resolution (and so the Emperor fix and strings take effect)
+  still needs the overnight Emperor test; the map line alone shows it is loaded.
+- **Override scope.** Works for libraries resolved by soname through `LD_LIBRARY_PATH` (`libinfomodule`). Does **not** work for plugins
+  loaded by full path: the nvm `libhomelauncher.so` was never mapped. *runtime* (section 13). Plugins (`spapp/lib/activity`, `spapp/lib/module`)
+  need a reflash or a bind mount. Not yet proven for `libapis` (a `NEEDED` lib, so expected to work).
+- **Auto DST** (`docs/discoveries/auto-dst-region.md`, static only): no tzdata and no `TZ`; the MCU RTC owns the clock and re-pushes h:m,
+  so `TZ` alone would be undone. Suggested route: a `libinfomodule` patch stepping the clock at DST boundaries. Unrun.
+- **Android Auto identity** (`docs/discoveries/android-auto-identity-and-settings.md`): "Rolls-Royce/Phantom/2016" is
+  `CarInfo` in the read-only `androidauto_config.xml`, path hardcoded in `libandroidautomodule`. No-reflash route: bind-mount an edited copy
+  from the USB hook each boot. Wireless AA depends on the SSID not being `DEMO-WiFi-AP`. `system.RightDrive` is the driving-side key. Untested.
+- **Reverse guide lines** (`docs/discoveries/reverse-camera-guide-lines.md`): the unit draws a static 1024x233 8-bit bitmap in `libapis`
+  (file 0x623b4), y offset at 0x5065a. No steering input. A `libapis` nvm override is the delivery route, with a ready test script in
+  `tools/usb-patch/guideline`. Untested.

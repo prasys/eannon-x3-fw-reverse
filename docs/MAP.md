@@ -106,6 +106,13 @@ delay).
 | `etc/mdev.conf` + `etc/usb_action_8368-U` | USB autorun of `gemn_auto.sh` |
 | spapp `appinfo.rc` | starts `mcusrv` |
 
+## Home date / clock (FINDINGS 13)
+| What | Where |
+| --- | --- |
+| Home date format string `yyyy-MM-dd` | `spapp/lib/activity/default/libhomelauncher.so` file offset 0x1846b (read by `HomeWidget::timeDateSlot` @ 0x13b48) |
+| Activity plugin dir (hardcoded) | `/application/lib/activity/default`, `ActivityManagerImpl::loadDefaultActivity` in `libappframework` |
+| Setup > Time screen layout | `Ui_SetupTimeForm::setupUi` @ 0x41b08, `libsetupviews.so.1.0.0` |
+
 ## Android Auto / Wi-Fi AP (FINDINGS 8)
 
 | Thing | Where |

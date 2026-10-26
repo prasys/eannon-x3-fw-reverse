@@ -3,17 +3,16 @@
 runtime / inferred*. Firmware `X3_20250718`; offsets are file offsets in the stock files under `fw/fs/spapp/`.
 
 ## Short answer
-1. **Two possible sources of lines.** The head unit *can* draw its own lines, but they are a **static 8-bit bitmap**
-   (a trapezoid with green/yellow/red distance marks, no box, no steering link). They are drawn **only when
-   `system.OptionReverLine=true`** (UI: "Reversing Guidance Line"). In **every** diag capture that key is `false`
-   (*runtime*, 17 SETUPMENU.ini copies). With the stock setting the unit draws nothing, so any lines or guide box
-   you see then come from the camera or its box, baked into the CVBS video, and cannot be moved from firmware
-   (*inferred*: our bitmap has no box, so a "guide box" is not ours).
-2. If the setting was on, the unit's trapezoid is **pixel data inside `libapis.so.1.0.0`** (read-only squashfs `spapp`),
-   blitted at a fixed position. Smallest fix: a 1-2 byte patch (vertical) or a same-size bitmap rewrite
-   (horizontal / scale), delivered through the nvm library override.
+**Owner report:** the misaligned lines are the unit's own "Reversing Guidance Line" (not the camera's). So the bitmap
+below is the thing to fix. The captures all show `system.OptionReverLine=false`, so they were taken with the option off.
+1. The lines are a **static 8-bit bitmap** (trapezoid with green/yellow/red distance ticks, no box, no steering link),
+   drawn only when `system.OptionReverLine=true` (UI: "Reversing Guidance Line").
+2. The bitmap and its position are **pixel data and immediates inside `libapis.so.1.0.0`** (read-only squashfs `spapp`).
+   Smallest fix: a 1-2 byte patch (vertical) or a same-size bitmap rewrite (horizontal / scale), delivered through the
+   nvm library override.
 3. No steering-angle input exists: `McuCallback::updateSystemCanbus` is an empty function (*decompiler*,
    `libinfomodule` regen export line 11042), and `ParklineCtrl` only takes a bool and a language.
+4. If a *guide box* is also visible, it is not in our bitmap and would come from the camera.
 
 ## Pipeline (how the lines get on screen)
 | Stage | Where | Evidence |

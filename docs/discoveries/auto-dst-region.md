@@ -12,6 +12,8 @@ prelinked libs (`libinfomodule` 0x41eb0000, `libapis` 0x41d10000, see CLAUDE.md 
   (below). The MCU clock is not DST-aware, so the next MCU time message would undo the hour jump.
 - There is **no persistent, no-code way to get `TZ` into the Launcher**: the service env lives in `init.rc` on the
   read-only rootfs; the USB hook only runs at plug-in; `/etc` is a tmpfs copy rebuilt every boot.
+- **Phone-driven time (section 5):** CarPlay/iAP2 receives the phone's seconds/timeZone/daylight but only logs them; Bluetooth
+  HFP `AT+CCLK?` phone time *is* applied (SoC + MCU) if the phone answers; Android Auto and AirPlay have nothing.
 - Recommended minimal path: a **small libinfomodule patch (via the existing nvm override) that steps the clock ±1 h at the
   DST boundaries and pushes the result to the MCU**, with the rule chosen by a config file in nvm (v1) and later by the
   existing *radio area* setting (v2). Details and risks below.
@@ -90,12 +92,100 @@ three setters plus the Setup page. *inferred from the code above*
    dedicated "DST: Off/US/EU" row means a new SetupItem plus `SetupStrIdConst` entry plus string tables
    (`ui-string-tables.md`), which is considerably more work than anything done so far.
 
-## 5. Open lead: CarPlay
-`libcarplaymodule.so` contains the strings `seconds:`, `timeZone`, `daylight` next to `deviceName`/`language` (file offsets
-0x47307-0x47368, *strings*). CarPlay/AirPlay time sync (`AirPlayReceiverSessionScreen_SetTimeSynchronizer`,
-`AirPlayTimeSyncClient` in `libcarplay_plugin.so`) may deliver the phone's zone and daylight flag. Unknown whether the
-app uses them; if it does, the phone could drive DST for CarPlay users without any new setting. Needs a decompile of
-that module. *unverified*
+## 5. Does the phone supply time? (CarPlay / iAP2 / AirPlay / Android Auto / Bluetooth)
+Method: fresh headless Ghidra exports of `libcarplaymodule.so` (imagebase 0x420a0000), `libbluetoothmodule.so`
+(0x42040000), `libdabmodule.so` (0x424b0000), `libspbluetooth.so` (0x42150000), string-annotated with
+`tools/annotate_strings.py`; `strings`/`objdump` on the rest. All firmware read-only, nothing executed.
+
+### 5.1 CarPlay / iAP2: delivered, then only logged (dead end)
+- Delivery chain, *strings*: iPhone iAP2 -> `libiap_common.so.2.13.0` `accessory::AppleiAP2ManagerNotifier::deviceTimeUpdate(uint32_t,
+  uint64_t, int16_t, int8_t)` (binder notifier, error text "notify the %d deviceTimeUpdate error") -> `libspiap2.so.2.13.0`
+  `spiap2::SPiAP2ManagerCallbackImpl::deviceTimeUpdate(uint32_t, uint64_t, int16_t, int8_t)` -> `SPiAP2CallbackImpl::deviceTimeUpdate(
+  ull, short, signed char)` -> app side `CPiAP2DevNotificationsCallback::deviceTimeUpdate(unsigned long long, short, char)`
+  in `libcarplaymodule.so` @ **0x420d6420** (file `carplaywireless/carplaywireless.cpp`, line 0x721). *strings + decompiler*
+- Fields (by the signature, with the leading uint32 being the service/user id that the app callback drops): `uint64 seconds`,
+  `int16 timeZone`, `int8 daylight`. Units are **not shown by any tool**; the Apple iAP2 DeviceTimeUpdate message is, from my
+  knowledge of the spec, seconds since 1970 UTC, zone offset in minutes, DST offset in minutes. *inferred*
+- The body at 0x420d6420 is a pure `qDebug()` call: tag `[CarplayWireless]`, function name, then the literals `seconds:`, `timeZone`,
+  `daylight` each followed by a `QTextStream <<` of the argument. No store to `this` or a global, no call to `SetupExec`,
+  `MCUControl`, `stime`, `QDateTime` or any other module. *decompiler (annotated)*. The decompiler's argument naming for the
+  printed values is unreliable (the 64-bit value is split over r2:r3 and the others are on the stack); the conclusion
+  "log only" does not depend on that.
+- `libcarplaymodule.so` has **no** import of `setSystemDateTime`/`stime`/`QDateTime`/`MCUControl` (only
+  `SetupExec::{getSystemDimmerState,setMuteCtrl,getCurrentSource,setSysState,getSysState}`). *strings*
+- Only the wireless-CarPlay callback class has this method (file name `carplaywireless.cpp`); no other app module in
+  `spapp/lib/module` implements `deviceTimeUpdate`. *strings*
+
+### 5.2 AirPlay `SetTimeSynchronizer` is a media clock, not wall time
+`libcarplay_plugin.so`/`libairplay_entry.so` carry `AirPlayReceiverSessionScreen_SetTimeSynchronizer`, `AirTunesClock_*`
+(`GetSynchronizedNTPTime`, `Adjust`, ...) and the CoreUtils time helpers (`UTCOffset`, `GMTtoLocalTime`, `localtime_r`).
+None of the three imports `stime`/`settimeofday`/`clock_settime`. This is the AirPlay A/V sync clock. *strings*
+
+### 5.3 Android Auto: no time channel found
+- The three `androidauto_config.xml` files contain no time, zone or DST key (`grep -i time|dst|daylight|zone` only hits
+  `ProbeTimeout` and the `EV_CONNECTOR_TYPE_TESLA_ROADSTER` flag). The "timezone/DST" string mentioned in the original lead was
+  not reproducible: the only `timezone|daylight` hit in the whole tree (case-insensitive grep over `spapp spsdk opt`) is
+  `spsdk/etc/wifimanager/udhcpd.conf`. *strings/grep*
+- `libspandroidauto.so.2.2.20`, `libGAL.so`, `libspautolink.so.3.6.2`, `libandroidautomodule.so` have no
+  zone/UTC/time-sync/setTime strings. *strings*
+
+### 5.4 Bluetooth HFP: **this one does set the clock** (phone local time, ungated)
+- `libbluetoothmodule.so` `BlueToothModuleImpl::BTSrv_ServiceCBK(BTAddr*, BTServiceEvent, void*)` @ **0x42071914**, `case 0x15` (the
+  module's mapped id for `EVENT_SRV_AT_GET_PHONE_TIME`): parses the event string and calls `SetupExec::setSystemDateTime(QDateTime&)`
+  (PLT import, `libbluetoothmodule.c` ~line 22258). *decompiler + assembly (0x42072044-0x420720e0)*
+- String layout, read from the Thumb at 0x42072044 (the branch with no leading blank; a leading `0x20` shifts everything by 1):
+  `yy` at [0..1], `MM` [3..4], `dd` [6..7], `hh` [10..11], `mm` [13..14], `ss` [16..17]; year `= yy + 2000` (`add r1,#0x7a0`
+  after an ASCII-biased multiply). **Characters from index 18 on (a zone suffix, if the phone sends one) are never read.** The
+  string is the phone's own local clock (an `AT+CCLK?` reply: `libspbluetooth`, `libbt-ipc`, `libGbtsTask` and
+  `spsdk/bin/gocsdk` contain `AT+CCLK?`, `+CCLK:`, `GET_PHONE_TIME`, `IND_PHONE_TIME`, `BT_EV_SRV_HF_PHONE_TIME: time = %s`), so
+  if the phone answers, DST is already folded in and no zone maths is needed. *assembly; the format is partly inferred from the
+  code, not from a sample string*
+- Event path: `gocsdk` -> binder `IBlueToothCallback::onTransact` in `libspbluetooth.so`, code **0x116** (log text
+  "EVENT_SRV_AT_GET_PHONE_TIME : BTGetPhoneTime", reads an int32 length then the string) -> module callback. *decompiler*
+- `SetupExec::setSystemDateTime` @0x41eeb7f0 (re-read from `libinfomodule.ann.c`): `stime()` then `MCUControl::send_mcu_time` +
+  `send_mcu_date`, so the **MCU RTC is rewritten too**. There is **no setting check, no sanity check on the date, no "only
+  once" guard** in this function or in the BT case. *decompiler*
+- Not found: who *asks* the phone for the time. `libbluetoothmodule.so` has no request symbol (no `GetPhoneTime`), so the request is
+  made by `gocsdk` itself (it has a `GET_PHONE_TIME` command), possibly on HFP connect. **Whether and when it fires, and whether
+  iPhones/Android phones answer `AT+CCLK?` at all, is unverified** (my recollection is that iOS does not implement CCLK;
+  *inferred, unconfirmed*). This needs a runtime capture.
+- Side effect to watch: if it does fire, the clock is overwritten with the phone's time at every HFP (re)connect, which
+  would fight a manual set and a DST-step patch (section 4C) unless the phone is right.
+
+### 5.5 Other callers of `setSystemDateTime`
+`libdabmodule.so` `DabUart::parse_resp_sync_time` @ 0x424be74c builds a QDateTime from the DAB tuner's UART reply
+(year as 2 bytes, then bytes [4],[6],[7] = day/hour/minute, seconds 0) and calls `setSystemDateTime`: broadcast time, only
+on units with the DAB module. `libsetupviews.so.1.0.0` (Setup > Time) also imports `stime` directly plus
+`SetupTime::setSystemDateTime`. No other binary in `spapp spsdk opt` imports `stime`; `spsdk/bin/init` and `libdirect` import
+`settimeofday`/`clock_settime` (not investigated, `libECSDK.so` lists `settimeofday` in its dynstr and has `queryTime`; no
+binary I looked at links it, *unverified*). *strings*
+
+### 5.6 Conclusion
+- **CarPlay/iAP2 cannot drive DST today.** The phone's seconds/timeZone/daylight reach the car app (`deviceTimeUpdate`
+  @0x420d6420) and are only logged. Nothing consumes them, nothing reaches the MCU.
+- **Android Auto: nothing.** **AirPlay: media clock only.**
+- **Bluetooth HFP phone-time is the only existing phone-driven clock path**, writes SoC and MCU, carries the phone's local
+  time (so DST-correct if the phone answers) but is of unknown reliability and may never fire on iPhones.
+- A patch for CarPlay would be real but small in concept: in `libcarplaymodule` replace the log body of `deviceTimeUpdate` so that
+  it computes `local = seconds + (timeZone + daylight)*60` (units per the inferred iAP2 definition) and calls
+  `SetupExec::setSystemDateTime`. It rides the same nvm library-override mechanism as `libinfomodule` (for a module under
+  `spapp/lib/module`, the loading rule is **unverified**, see `nvm-library-override.md`; the module is `dlopen`ed, not linked).
+  Risks: the MCU RTC is rewritten on every CarPlay (re)connect (and a wireless session may send updates repeatedly: debounce
+  to once per session and ignore |delta| < 1 min); wrong unit assumption gives hour/minute errors; a user who sets the clock by
+  hand would be overridden; CarPlay-only users, iPhone must be connected. Needs the unit's own code cave or a rebuilt
+  function (`deviceTimeUpdate` is ~0xd0 bytes of log code, so a rewrite fits in place). *inferred*
+- Compared with section 4C (SoC steps +-1 h by rule) this is better for CarPlay users (no rule table, correct zone) and
+  worse for everyone else; the two can coexist only if one marks `dst_applied` consistently.
+
+### 5.7 Runtime tests that would settle it (read-only first)
+1. Plug an iPhone for CarPlay and grep the unit's log for `[CarplayWireless]` ... `deviceTimeUpdate` ... `seconds:`/`timeZone`/
+   `daylight` (Qt debug goes to logcat/stdout; the extras logcat capture should contain it). That gives the real units and
+   whether DST shows in `daylight`. Do it once in summer and once in winter, or compare with the phone's setting.
+2. Same with an Android phone over BT: look for `EVENT_SRV_AT_GET_PHONE_TIME` / `phoneTime:` in logcat, note when it appears
+   (connect only? every N minutes?) and the exact string (redact; only the format, not anything personal).
+3. Check whether the car clock changes on BT connect today (if yes, that is the stock "sync time from phone" behaviour and the
+   unit already follows the phone's DST on that path).
+4. `nm`-level check of how `libcarplaymodule` is loaded (dlopen path under `LD_LIBRARY_PATH`) before relying on an override.
 
 ## 6. Risks
 - **MCU RTC writes:** `send_mcu_time/date` is already used by the Setup screen, so the command is known-good, but a

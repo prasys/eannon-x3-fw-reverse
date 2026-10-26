@@ -15,3 +15,4 @@ Short, current summaries. Each links back to the evidence in `docs/FINDINGS.md`.
 | Firmware layout, storage, boot | [storage-and-boot.md](storage-and-boot.md) | parsed |
 | MCU image header | [mcu-image-header.md](mcu-image-header.md) | decoded, payload encrypted |
 | Reboot incident | [reboot-incident.md](reboot-incident.md) | mitigated |
+| Automatic DST / region timezone | [auto-dst-region.md](auto-dst-region.md) | analysed, nothing run |

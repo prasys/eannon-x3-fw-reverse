@@ -6,6 +6,7 @@
 # Each plug-in = one snapshot in diag/<boot_id>_<n>/:
 #   changes.txt     settings diff vs the previous snapshot (what your last action saved)
 #   audio_events.txt  audio/DSP log lines since the previous snapshot (what got applied)
+#   daynight_keys.txt / daynight_events.txt  DimmerState/IllCtrl keys + ILL/dimmer log lines
 #   window.log      every log line since the previous snapshot (unfiltered)
 # On the first plug-in after boot it also starts a background logcat recorder in /tmp,
 # so events between plug-ins are kept (logcat's own ring buffer is small).
@@ -67,6 +68,8 @@ for f in "$NVM"/*.ini; do
 	md5sum "$f"
 done > "$SNAP/ini_stat.txt" 2>&1
 grep -n -E '^audio\.|^system\.Eq' "$NVM/SETUPMENU.ini" > "$SNAP/audio_keys.txt" 2>&1
+# day/night: only the three dimmer/ILL keys (FINDINGS 15)
+grep -n -i -E 'DimmerState|DimmerLevel|IllCtrl' "$NVM/SETUPMENU.ini" > "$SNAP/daynight_keys.txt" 2>&1
 
 PREV=$OUT/last
 {
@@ -114,6 +117,11 @@ SINCE=$(cat "$RAM/since.$BOOT_ID" 2>/dev/null)
 	echo "== log lines after '${SINCE:-boot}' (recorder=$REC)"
 	grep -E "$PAT" "$SNAP/window.log" | grep -v 'control 766\]'
 } > "$SNAP/audio_events.txt" 2>&1
+# day/night / ILL log lines in the same window (FINDINGS 15.6)
+{
+	echo "== log lines after '${SINCE:-boot}' (recorder=$REC), uptime=$(cut -d' ' -f1 /proc/uptime)s"
+	grep -E 'updateSystemILLActivation|updateSystemBrakeActivation|exec_dimmer_state|change_dimmer_state|loadSystemSettings|RstMemory|rst_memory|mcu_parse_detect|NightMode' "$SNAP/window.log" | grep -v 'control 766\]'
+} > "$SNAP/daynight_events.txt" 2>&1
 NEWEST=$(tail -n 1 "$SNAP/window.log" | cut -c1-18)
 [ -n "$NEWEST" ] && echo "$NEWEST" > "$RAM/since.$BOOT_ID"
 

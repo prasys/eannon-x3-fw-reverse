@@ -1,0 +1,19 @@
+{
+ "name": "patch C: day/night follows live ILL at boot",
+ "docs": "docs/FINDINGS.md section 15",
+ "file": "libinfomodule.so (X3_20250718, /application/lib/module/default/); requires patch B",
+ "applies_to_md5": "68f0bcf18a4790f749e47fa44bf303c5",
+ "patched_md5": "13dc16cefa948c1cc9914a15ef6560b2",
+ "changes": [
+  {"vaddr": "0x41ef2024", "file_offset": "0x42024", "len": 8,
+   "old": "f2f7e0eaf2f794ef", "new": "f7fffe82 bf00 bf00 (bl 0x41ef1d2c; nop; nop)",
+   "meaning": "in SetupExec::loadSystemSettings restore path, replaces `blx systemDimmerState; blx exec_dimmer_state_only` with a call to the cave"},
+  {"vaddr": "0x41ef1d2c", "file_offset": "0x41d2c", "len": 24,
+   "meaning": "cave in the branch patch B made dead: push {r3,lr}; r0=systemDimmerState(); if r0==0xa6 {exec_dimmer_state(0xa5)} else {exec_dimmer_state_only(r0)}; pop {r3,pc}"}
+ ],
+ "effect": "a saved night state is no longer restored on boot: it is reset to day (level doubled, saved), then the existing tail sets night again only if ILL reads on",
+ "build": "python3 -I tools/apply_daynight.py <installed patch B payload> <outdir>   (or tools/build_payload.py ... --daynight for a from-stock build)",
+ "delivery": "nvm library override (tools/usb-patch/x3patch); undo = reinstall the previous payload (saved by patch.sh as previous_libinfomodule.so.<ts>) or mode=uninstall (back to stock, which also drops patch B and the strings)",
+ "evidence": "assembly (disassembly of the built file checked, only 31 bytes differ); installed 2026-10-26, owner reports Test 1 and Test 2 correct, DimmerState/DimmerLevel flips seen in snapshots (FINDINGS 15.9)",
+ "known_risk": "if the ILL shadow (libapis 0x41dc680c) is still 0 when the tail runs and the first 0x37 also changes another bit, lights-on at start-up can stay day until the switch is toggled (FINDINGS 15.4 item 3)"
+}

@@ -68,6 +68,7 @@ the owner's go-ahead.**
 | --- | --- | --- |
 | **B: Emperor restore** (1 byte, `libinfomodule.so` file offset `0x41d2b`, `0x80`→`0xb8`, `beq.w`→`b.w`) | nvm library override | on the unit (installed 2026-10-25), **not yet confirmed loaded** |
 | **Language strings** (all 20 languages with tables, plus English fixes) | same library | in the same build |
+| **C: day/night follows live ILL at boot** (31 bytes in `libinfomodule.so`: call site `0x41ef2024`, cave `0x41ef1d2c`; needs B) | same library | on the unit (installed 2026-10-26), owner reports it works; `DimmerState` flips `true`/`false` with `DimmerLevel` 16/32 in the snapshots (FINDINGS 15.9) |
 | **wifi40** (adds `ht_capab=[HT40+][SHORT-GI-20][SHORT-GI-40]` to `softap.conf`) | `/media/flash/nvm/softap.conf` | applied, verified after cold boots (`secondary_channel=1`) |
 | **A: EQ restore gate** (`libsetupmodule.so` `0xaa1e`, `90 b1`→`12 e0`) | not delivered | only if EQ resets with a good `audio.EQ.custom` |
 
@@ -82,6 +83,7 @@ The USB hook runs from mdev, independent of the UI, so this works even if the La
 | `tools/usb-diag/gemn_auto.sh` | Read-only diagnostic snapshot per plug-in: settings diff, audio log window, Wi-Fi/AA state, redacted logs. `extras.flag` on the stick adds a hardware inventory and a 30 s input/UART capture. It also calls the patch scripts first |
 | `tools/usb-patch/x3patch/patch.sh` | Installs or removes the `libinfomodule.so` override. Checks the stock md5 and that the payload md5 is known. Keeps a copy of the replaced file |
 | `tools/usb-patch/wifi40/wifi40.sh` | HT40 patch with a health check and automatic undo if hostapd doesn't come up |
+| `tools/apply_daynight.py` | Applies patch C to an installed patch-B payload (keeps its strings), writes `libinfomodule.so` + `.md5` |
 | `tools/build_payload.py` | Builds the payload: stock library + patch B + string tables → `libinfomodule.so`, `.md5`, `BUILD.txt` |
 | `tools/strings/strtab.py` | Extracts and rebuilds the string tables (`extract` / `build` / `check`) |
 | `tools/strings/overrides.json`, `tables_final.json` | Hand fixes, and the finished tables for all languages |

@@ -50,6 +50,12 @@ shutdown path (make the blob save happen on change, not just at power-off).
 - Restore side already exists for delay (`SetupModule::exeDelay`) and filter
   (`exeFilter`). Check loudness/VBass/balance restore before relying on it.
 
+## Bug 2: day/night mode stale vs headlights (new, FINDINGS 15)
+Static root cause hypothesis: persisted night is restored on short-off boots and nothing moves night to day; the ILL detector only fires on an exact `^ == 4` edge.
+Next: (1) add the read-only diagnostic from FINDINGS 15.6 and capture a lights-on / lights-off short-stop repro; (2) read the 0x37 bit layout from a capture;
+(3) design the libapis `& 4` patch (nvm override) and/or the `loadSystemSettings` tail day branch; (4) find the real UI-theme consumer (Launcher/homelauncher).
+**Status: patch C installed and working (FINDINGS 15.8, 15.9).** Remaining: overnight check, keep the libapis `& 4` change in reserve. Then Test 1 and Test 2; Test 2 decides the libapis change. Needs the owner's go-ahead before anything is written to the unit.
+
 ## Bug 2: EQ reset "next day" (only if it recurs)
 - The user reports EQ is remembered, and the capture shows it saved (5.7).
 - The restore is still gated on the MCU RstMemory flag (5.2). If EQ is ever seen

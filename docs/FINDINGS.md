@@ -733,3 +733,122 @@ are larger than the image slots in 2.3.
   from the USB hook each boot. Wireless AA depends on the SSID not being `DEMO-WiFi-AP`. `system.RightDrive` is the driving-side key. Untested.
 - **Reverse guide lines** (`docs/discoveries/reverse-camera-guide-lines.md`): the unit draws a static 1024x233 8-bit bitmap in `libapis`
   (file 0x623b4), y offset at 0x5065a. No steering input. The `libapis` nvm override loads (see above); the visual shift (`--up 40` test) is pending the owner's photos.
+
+---
+
+## 15. Day/night (dimmer state) goes stale vs headlights (ILL) (2026-10-26, static analysis only)
+**Symptom (user, in the car):** the day/night mode that should follow the auto-headlight/illumination signal stays on
+its old value (e.g. keeps "dark" after the lights are off). Detail: `docs/discoveries/day-night-ill.md`.
+Nothing here has been run on the unit. Addresses are `libinfomodule.so` (prelinked 0x41eb0000) and `libapis.so.1.0.0`
+(prelinked 0x41d10000) unless stated. Ghidra exports are `fw/decomp/regen/`.
+
+### 15.1 What "day/night" is in this firmware
+- It is `SetupExec` **dimmer state**: enum `0xa5` = day, `0xa6` = night. Persisted as the bool key `SetupStrIdConst::setupDimmerState`
+  (true = night); brightness in `setupDimmerLevel` (int); the "follow ILL" switch is `setupIllCtrl` (bool; `systemIllCtrl()` returns `0xa2`
+  if true, else `0xa3`). Slots resolved by `objdump -R` on GOT slots 0x41f397e8 / 0x41f39750 / 0x41f396ec. *parsed + decompiler*
+  (`systemDimmerState` @ 0x41eea5d0, `systemIllCtrl` @ 0x41eea1e4)
+- INI keys (from the snapshots' `SETUPMENU.ini`, line numbers 44/45/71): `panel.DimmerLevel`, `panel.DimmerState`, `system.IllCtrl`. *runtime*
+  (`libsysset` has the suffixes `.DimmerState` / `.DimmerLevel` / `.IllCtrl` at file 0xf1ff / 0xf1f2 / 0xf2e3. An earlier guess of
+  `panel.dispaly.DimmerState` was wrong.)
+- `SetupExec::exec_dimmer_state(0xa5|0xa6)` @ 0x41eee2e0 sets the global byte read by `getSystemDimmerState()` (@ 0x41ee6880), calls
+  `PlatformControl::setDimmerLevel` (night = level/2, day = level*2 capped 0x20) and saves both keys. *decompiler*
+- Known readers of `getSystemDimmerState`: `ComTipsWidget` in `libcomviews` (backlight tip icon, `tipsBacklightclick` calls
+  `change_dimmer_state`). **Not found:** any code that restyles the whole Qt UI from it; Launcher/homelauncher were not read. So the
+  "UI theme" the user sees may be driven elsewhere from the same byte (*unverified*).
+
+### 15.2 How ILL reaches the app
+1. MCU cmd 0x37 → `mcusrv` `FUN_000139fc` stores `P1<<8|P2` at `this+0xec` and calls callback slot `+0x1c` with the u16. *decompiler*
+2. App side, `libapis` `MCUControlPrivate::updateSystemDetectState(u16)` @ 0x41d5f5a8. *assembly*:
+   ```
+   41d5f5b0  ldrh r2,[r3]        ; r3 = 0x41dc680c, the previous-state shadow
+   41d5f5b2  eors r2,r1          ; r1 = new value
+   41d5f5b4  cmp  r2,#4 ; beq → ILL path: strh r1,[r3]; ubfx r1,r1,#2,#1; MCUControl::updateSystemILLActivation(bit2)
+   41d5f5b8  cmp  r2,#8 ; bne end → brake path: ubfx r1,r1,#3,#1; ...BrakeActivation(bit3)
+   41d5f5d8  strh r4,[r3]        ; shadow = new value, EVERY call
+   ```
+   `MCUControlPrivate::DetectIll()` @ 0x41d5f294 reads the **same** shadow: `ubfx r0,[0x41dc680c],#2,#1` (bit 2 = ILL, bit 3 = brake).
+   0x41dc680c lies past the file-backed part of the RW segment (0x41dc41a0 + 0x2644 = 0x41dc67e4), so it is **.bss, zero at start**. *parsed + assembly*
+3. `McuCallback::updateSystemILLActivation(bool)` @ 0x41ef35d0 (libinfomodule). *decompiler; constants checked in assembly*
+   - ILL on: if dimmer state == day → `exec_dimmer_state(0xa6)`; `send_mcu_ill`; keylight. ILL off: if state == night → `exec_dimmer_state(0xa5)`; LED/ill resend.
+   - Then, only if the foreground activity string matches one of two literals, it queries `InfoModule::getSysState` (two keys) and emits
+     `setCPNightModeSig(b)` or `setAANightModeSig(b)` with **b = 1 on ILL on, 0 on ILL off** (`movs r1,#1`/`#0` at 0x41ef3876, 0x41ef38b4, 0x41ef394e, 0x41ef398e).
+   - So CarPlay/Android Auto night mode is fed from this same edge handler, not from the persisted state.
+
+### 15.3 Boot path (`SetupExec::loadSystemSettings` @ 0x41ef1cd0, see also section 9)
+- RstMemory flag == 0 (short off): `systemDimmerState(); exec_dimmer_state_only()` restores the **persisted** day/night bool. *decompiler*
+- RstMemory flag != 0 (MCU memory reset): `exec_dimmer_state(0xa5)`, i.e. forced day. *decompiler*
+- Tail (both paths): `if (systemIllCtrl()!=0xa2 || detectIll()!=0) { if (detectIll()!=0 && getSystemDimmerState()==0) exec_dimmer_state(0xa6); ... }`.
+  It can only move **day → night**. No branch moves night → day. *decompiler (condition shape; not re-read in assembly)*
+
+### 15.4 Root-cause hypothesis (static; unconfirmed on the unit)
+1. **Night is persisted and restored but never re-validated against the live ILL at boot.** Short off with lights on (night saved), restart with lights
+   off: restore path loads night, the tail has no night→day branch, and no ILL edge ever comes (bit 2 is already 0 in the shadow). Stuck dark until the
+   user toggles ILL or presses the backlight icon. This is the reported symptom. After an overnight off, RstMemory != 0 forces day and the same tail picks
+   night if ILL is on, so the bug shows after **short** stops. It is the sister of the Emperor/RstMemory gate in section 9.
+2. **Edge-only, exact-match detector.** `old ^ new == 4` fires only if ILL is the *only* bit that changed. If ILL changes in the same 0x37 as another bit
+   (ACC-on or ACC-off with lights, anything in bits 0-1/4+), no event is raised, and the shadow is overwritten anyway so it is never retried. Likewise the first
+   0x37 after the app starts compares against a zero shadow. The AA/CP night signal shares this weakness.
+3. **Ordering at boot (unknown):** the tail's `detectIll()` reads the shadow, which is zero until the first 0x37 arrives; whether 0x37 comes before
+   `loadSystemSettings` is not known statically. If after, "lights on at start-up but UI day" is also possible (the reverse case).
+4. Not evidenced / ruled out so far: inverted polarity (bit 2 = 1 is treated as lights-on in every consumer), debounce (none present).
+**Unknown:** the meaning of bits 0, 1, 4+ in 0x37; whether the MCU resends 0x37 periodically or only on change; what `setupIllCtrl` is set to on the unit
+(`0xa2` skips the tail when ILL is 0); how mcusrv's slot `+0x1c` maps to `updateSystemDetectState` in the libmcusrv vtable (names only list `DetectState`).
+
+### 15.5 Proposed fix and delivery (design only; nothing built or installed)
+- **Robust fix (libapis, nvm-overridable, see section 14):** make `updateSystemDetectState` level-aware: fire `updateSystemILLActivation(bit2)` when
+  `(old ^ new) & 4` (not `== 4`), and also on the first message after start. Same for brake with `& 8`. `updateSystemILLActivation` already guards on the
+  current dimmer state, so repeated calls are idempotent for the dimmer. Needs a 32-bit Thumb-2 encoding or a code cave at 0x41d5f5b0-0x41d5f5ba (the
+  `eors/cmp/beq` pair has 4 bytes); not yet designed byte-for-byte.
+- **Boot fix (libinfomodule, already nvm-mapped via patch B):** in the `loadSystemSettings` tail also call `exec_dimmer_state(0xa5)` when
+  `detectIll()==0 && getSystemDimmerState()!=0`. Only correct if the shadow is valid at that moment (15.4 item 3); otherwise it would force day at start-up.
+  Alternative: never restore night from nvm (use `exec_dimmer_state_only(0xa5)`) and let the live ILL decide.
+- **Delivery:** `libapis` override is proven (section 14, `--up 40` run); `libinfomodule` is mapped, effect still pending the overnight test. Plugins
+  (`libcomviews`) are not overridable. No reflash needed for either.
+- **Risk:** `libapis` is shared by MCU handling; a mistake could mis-fire brake/ILL callbacks. Keep an undo path (delete the nvm copy), as for the other overrides.
+
+### 15.6 Read-only USB diagnostic to confirm (not added to `gemn_auto.sh` yet)
+- Copy only the three keys from `SETUPMENU.ini` (`grep -n -E 'DimmerState|DimmerLevel|IllCtrl'`) into the snapshot at each plug-in. No other INI content.
+- Add to the logcat window filter: `updateSystemILLActivation|exec_dimmer_state|change_dimmer_state|loadSystemSettings|RstMemory|mcu_parse_detect`
+  (markers seen in the annotated export: `"updateSystemILLActivation:"`, `"exec_dimmer_state"`). Whether mcusrv's `puts("mcu_parse_detect…")` reaches logcat is unverified.
+- Repro plan: lights on at ACC-off, restart with lights off after a short stop; record boot id, the three keys, and whether an `updateSystemILLActivation:` line appears
+  after boot. Predicted by the hypothesis: `DimmerState=true`, no ILL line, UI stays night. A second case: lights toggled together with ACC (expect no ILL line).
+
+### 15.7 Runtime check against the USB snapshots (2026-10-26, read-only look at the stick)
+- **Stale night reproduced (Test 1).** Snapshot `217714c2_1` (16:09:09, uptime 18 s): lights on, `DimmerState=true` is correct there, not a stale case.
+  Then the owner switched the car off with the lights on, ACC off, started the car again, and the head unit still showed night until the light switch
+  was flicked on/off by hand. Snapshot `e471768e_1` (16:12:05, uptime 18 s) has `DimmerState=true`, `DimmerLevel=16`, `system.IllCtrl=1`.
+  The second start is read as lights off at restart (not confirmed by the owner). *runtime + owner observation*
+  This matches 15.4 item 1. `IllCtrl=1` means `systemIllCtrl()==0xa2`, so with ILL off the `loadSystemSettings` tail is skipped entirely.
+  The manual flick works because it changes only bit 2, which satisfies `old ^ new == 4`. *runtime + assembly*
+- **Not supported by the data:** the claim that an overnight off resets to day. `DimmerState` stays `true` in every snapshot from 2026-10-25 21:04
+  to 2026-10-26 16:12, including the 14:47-15:08 boots. There are no snapshots between 21:04 and 14:47, so whether RstMemory was ever non-zero is unknown.
+  Treat the RstMemory link as unproven; the persisted-night restore stands on its own.
+- **The diagnostic log filter found nothing.** `window.log`/`logcat.txt`/`live.log` contain 0 lines with `setup_exec`, `[QT`, `ILLActivation` or `exec_dimmer_state`;
+  the app's QDebug output does not reach logcat, and `sp_log` is empty. ILL events and bit layout cannot be seen this way. Only the saved keys are observable.
+  The stick was still running the old `gemn_auto.sh` (no `daynight_*.txt`).
+- Earlier snapshots show `DimmerState=false` (2026-10-25 16:37-20:38) and `true` at 16:21 and from 21:04, so the key does change.
+
+### 15.8 Patch C built (2026-10-26, NOT installed)
+- Descriptor `patches/patch-c-daynight.json`; builder `tools/apply_daynight.py` (and `tools/build_payload.py --daynight`).
+  Applied to the installed payload (md5 `68f0bcf1…`, patch B + strings) it gives md5 `13dc16cefa948c1cc9914a15ef6560b2`; 31 bytes differ. *assembly*
+- Call site 0x41ef2024 (`blx systemDimmerState; blx exec_dimmer_state_only`, restore path) becomes `bl 0x41ef1d2c; nop; nop`. The cave at 0x41ef1d2c is the
+  first instruction after patch B's `b.w`, i.e. dead code, so patch C needs patch B. Cave: `push {r3,lr}; blx systemDimmerState; cmp r0,#0xa6; bne L; movs r0,#0xa5;
+  blx exec_dimmer_state; pop {r3,pc}; L: blx exec_dimmer_state_only; pop {r3,pc}`. PLT stubs 0x41ee45e8 / 0x41ee54b8 / 0x41ee4f54 decoded to
+  `systemDimmerState` / `exec_dimmer_state` / `exec_dimmer_state_only` via the GOT relocs. *assembly + parsed*
+- Effect: saved night is restored as day (`exec_dimmer_state(0xa5)` doubles the level, capped 0x20, and saves both keys; `exec_dimmer` has just stored the level it reads).
+  The unchanged tail then sets night only if `detectIll()` is on. Saved day behaves exactly as before.
+- **What the test shows:** Test 1 (lights off at restart) should now come up light. Test 2 (lights on, then start the car) tells whether the ILL shadow is valid when the
+  tail runs: if it comes up light, that is the risk in 15.4 item 3, and the `libapis` `& 4` / first-message change is then needed too.
+
+### 15.9 Patch C installed and tested in the car (2026-10-26 ~16:40)
+- Installed from the stick (`x3patch/log.txt`: nvm copy md5 `13dc16cefa948c1cc9914a15ef6560b2` from the 16:40:06 run; Launcher maps both the stock and the nvm
+  `libinfomodule.so`). *runtime*
+- Owner: Test 1 (lights on, car off, lights off, restart) and Test 2 (lights on, then start the car) both behave correctly now. *owner observation*
+- Snapshots after install (`diag/*`, keys only): `d4785fae_1` `DimmerState=false`, `DimmerLevel=32`; `f0ad6c07_1` `DimmerState=true`, `DimmerLevel=16`; earlier
+  `5ee3cc9b_1` / `11212b31_1` `true`/`16` (before the patched library had loaded or with lights on). The 32/16 pair is the expected day/night level pair, so there is
+  no level drift. *runtime*. Their order is not certain: the clock stamps in `runs.txt` for the last two are 4 s apart with ~18 s uptime each, so read them as one
+  day case and one night case, not as a sequence.
+- Consequence: at the time the boot tail runs, the ILL state was valid in the lights-on case seen, so the `libapis` `& 4` change (15.5) is **not needed for the reported
+  symptom**. The exact-match edge detector is still unproven in the field (ILL changing together with ACC); leave it unless it shows up.
+- `daynight_events.txt` stays empty, as predicted in 15.7: app debug lines do not reach logcat.
+- Not yet checked: a long (overnight) off, and `DimmerLevel` after several cycles with a non-default brightness.

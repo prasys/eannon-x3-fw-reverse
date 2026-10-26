@@ -19,3 +19,4 @@ Short, current summaries. Each links back to the evidence in `docs/FINDINGS.md`.
 | Date format YYYY-MM-DD to DD-MM-YYYY | [date-format-ddmmyyyy.md](date-format-ddmmyyyy.md) | parked: nvm override does not load plugins |
 | Automatic DST / region timezone | [auto-dst-region.md](auto-dst-region.md) | analysed, nothing run |
 | Reverse-camera guide lines | [reverse-camera-guide-lines.md](reverse-camera-guide-lines.md) | analysed, untested on unit |
+| Day/night (dimmer state) stale vs headlights | [day-night-ill.md](day-night-ill.md) | patch C installed, works in the car |

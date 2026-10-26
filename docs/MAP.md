@@ -135,3 +135,14 @@ delay).
 | Reverse guide-line bitmap / palette | `libapis.so.1.0.0` file 0x623b4 (1024x233, 8bpp) / 0x61fb4; position immediates at 0x5065a |
 | Driving side setting | `SETUPMENU.ini` `system.RightDrive` |
 | Clock path | MCU 0x36/0x3d → `MCUControlPrivate::updateSystemTime/Date` → `SetupExec::setSystemTime/Date` → `stime` |
+
+## Day/night and ILL (FINDINGS 15)
+| What | Where |
+| --- | --- |
+| MCU 0x37 detect handler | `mcusrv` `FUN_000139fc` (file 0x139fc) |
+| ILL/brake edge detector, shadow 0x41dc680c | `libapis` `MCUControlPrivate::updateSystemDetectState` 0x41d5f5a8; `DetectIll` 0x41d5f294 |
+| ILL consumer (dimmer state, AA/CP night sigs) | `libinfomodule` `McuCallback::updateSystemILLActivation` 0x41ef35d0 |
+| Dimmer state set / persist | `SetupExec::exec_dimmer_state` 0x41eee2e0, `exec_dimmer_state_only` 0x41eea68c, `systemDimmerState` 0x41eea5d0 |
+| Boot restore + night-only tail | `SetupExec::loadSystemSettings` 0x41ef1cd0 |
+| Keys | `setupDimmerState`, `setupDimmerLevel`, `setupIllCtrl` (INI `.DimmerState`, `.DimmerLevel`, `.IllCtrl`) |
+

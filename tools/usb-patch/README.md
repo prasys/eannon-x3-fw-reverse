@@ -21,6 +21,7 @@ x3patch/log.txt         written by the unit
 | patch B (Emperor restore, FINDINGS 9) | `fae35255cfc28d530fa100af5cab4c4d` |
 | string fixes only (FINDINGS 11) | `c8fceef18c51ab983634744470663672` |
 | patch B + string fixes | `573843500395e13431fde51d2d5f1422` |
+| patch C (day/night, FINDINGS 15.8) on the installed B + strings payload | `13dc16cefa948c1cc9914a15ef6560b2` (accepted via its `.md5` sidecar; build with `tools/apply_daynight.py`) |
 
 String builds come from `tools/strings/strtab.py build <stock or patch B lib>
 tools/strings/overrides.json <out>`. If `overrides.json` changes, the md5 changes too:

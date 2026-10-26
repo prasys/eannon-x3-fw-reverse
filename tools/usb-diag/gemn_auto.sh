@@ -19,6 +19,8 @@ USB=$(dirname "$0")
 [ -f "$USB/x3patch/patch.sh" ] && sh "$USB/x3patch/patch.sh"
 # Wi-Fi AP 40 MHz patch / health check (tools/usb-patch/wifi40), before the wifi/ capture
 [ -f "$USB/wifi40/wifi40.sh" ] && sh "$USB/wifi40/wifi40.sh"
+# Home date DD-MM-YYYY nvm-override test (tools/usb-patch/datefmt)
+[ -f "$USB/datefmt/datefmt.sh" ] && sh "$USB/datefmt/datefmt.sh"
 OUT=$USB/diag
 RAM=/tmp/x3diag
 NVM=/media/flash/nvm/Sunplus

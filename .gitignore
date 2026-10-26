@@ -24,3 +24,6 @@ tools/usb-patch/x3patch/log.txt
 
 __pycache__/
 *.pyc
+
+tools/usb-patch/datefmt/payload/
+tools/usb-patch/datefmt/log.txt

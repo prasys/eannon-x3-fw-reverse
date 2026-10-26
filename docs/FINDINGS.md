@@ -711,5 +711,7 @@ are larger than the image slots in 2.3.
   `ComTipsWidget::initTimeSlot`). Setup > Time uses separate Year/Month/Day columns (`Ui_SetupTimeForm::setupUi`
   @ 0x41b08, `libsetupviews`). *assembly, decompiler*
 - Candidate patch: 10 bytes at 0x1846b, `yyyy-MM-dd` to `dd-MM-yyyy`. Prepared offline only; not run on the unit.
-- Delivery open: the lib is an activity plugin loaded by full path (`/application/lib/activity/default`,
-  `QPluginLoader`), so the nvm `LD_LIBRARY_PATH` override probably does not apply. *inferred; needs a runtime test*
+- Delivery: the lib is an activity plugin loaded by full path (`/application/lib/activity/default`,
+  `QPluginLoader`). *Runtime* (2026-10-26): with the patched copy in `/media/flash/nvm` and a cold boot, the Launcher
+  still mapped only the `/tmp/sp/application/...` copy, so the nvm override does not reach plugins. Parked until a
+  reflash path exists (or a bind mount before Launcher starts).

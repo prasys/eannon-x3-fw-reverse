@@ -1,5 +1,5 @@
 # Date format: YYYY-MM-DD to DD-MM-YYYY
-**Status:** analysed, patch bytes prepared and checked offline, nothing tested on the unit. Exploration only.
+**Status:** parked. Patch bytes prepared; the nvm override was tried on the unit (2026-10-26) and does **not** load this plugin. Needs the reflash path.
 Evidence tags: *parsed / strings / assembly / decompiler / runtime / inferred*. Firmware `X3_20250718`.
 
 ## Where the date is shown (whole `spapp` tree searched)
@@ -27,7 +27,10 @@ So the "date" the owner sees in YYYY-MM-DD is the Home widget; the setup screen 
 - Reproduce: `python3 -I -c "b=bytearray(open(P,'rb').read()); assert b[0x1846b:0x18475]==b'yyyy-MM-dd'; b[0x1846b:0x18475]=b'dd-MM-yyyy'; open(OUT,'wb').write(b)"`.
 - Variants if wanted (same length only): `dd/MM/yyyy`, `dd.MM.yyyy`.
 
-## Delivery: the nvm library override probably does NOT reach this file
+## Runtime result (2026-10-26): nvm override does not work for this file
+*runtime.* `tools/usb-patch/datefmt` put the patched lib (md5 `c08c872f…`) in `/media/flash/nvm`. After a cold boot (uptime 16.5 s) the nvm copy was present, but the Launcher (pid 711) mapped `libhomelauncher.so` only from `/tmp/sp/application/lib/activity/default/`. So the plugin is loaded by full path and `LD_LIBRARY_PATH` is not used. The Home date was not observed to change. Parked; options 1 (bind mount, too late at 16 s uptime and lost on reboot) and 2 (reflash `spapp`) below remain.
+
+## Delivery (analysis before the test): the nvm library override probably does NOT reach this file
 - The `nvm` override works for libs resolved by soname through `LD_LIBRARY_PATH` (`init.gui.rc:4`). `libhomelauncher.so` is an **activity plugin**, not a `NEEDED` dependency: `ActivityManagerImpl::loadDefaultActivity()` in `libappframework.so.1.0.0` references the literal `/application/lib/activity/default` and the framework imports `QPluginLoader` (*strings*, *assembly*). `QPluginLoader` given a full path calls `dlopen(path)`, which ignores `LD_LIBRARY_PATH`. *Inferred; the join of directory and file name was not read.*
 - **Runtime test A (cheap, safe):** put an *unmodified* copy of `libhomelauncher.so` in `/media/flash/nvm`, reboot, check `/proc/<Launcher pid>/maps`. If only `/application/lib/activity/default/libhomelauncher.so` appears, the override does not work for plugins.
 - Options if A fails, least risky first:
@@ -54,7 +57,7 @@ Up and down buttons sit in two `QHBoxLayout`s (`layoutWidget` at 0x68, a second 
 - Unverified: that the Home date label is the one patched string (no screenshot or runtime capture); that the Home activity is the one used (vs another layout in `activity/directstage`, which contains no date pattern: not opened).
 
 ## Needs a runtime test on the unit
-1. Test A above (does an nvm copy of the plugin get loaded?).
+1. ~~Test A above~~ done: not loaded (see Runtime result).
 2. After any delivery: Home screen shows `26-10-2026` style; weekday still correct; clock unchanged; AM/PM mode unchanged.
 3. Setup > Time still sets the clock correctly (untouched by patch 1).
 4. Reboot persistence for the chosen delivery method.

@@ -21,6 +21,8 @@ USB=$(dirname "$0")
 [ -f "$USB/wifi40/wifi40.sh" ] && sh "$USB/wifi40/wifi40.sh"
 # Home date DD-MM-YYYY nvm-override test (tools/usb-patch/datefmt)
 [ -f "$USB/datefmt/datefmt.sh" ] && sh "$USB/datefmt/datefmt.sh"
+# reverse guide-line position test (tools/usb-patch/guideline), nvm libapis override
+[ -f "$USB/guideline/guideline.sh" ] && sh "$USB/guideline/guideline.sh"
 OUT=$USB/diag
 RAM=/tmp/x3diag
 NVM=/media/flash/nvm/Sunplus

@@ -27,3 +27,7 @@ __pycache__/
 
 tools/usb-patch/datefmt/payload/
 tools/usb-patch/datefmt/log.txt
+# guideline payload
+tools/usb-patch/guideline/payload/
+tools/usb-patch/guideline/log.txt
+tools/usb-patch/guideline/stock/

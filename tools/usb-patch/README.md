@@ -38,3 +38,14 @@ update this table and `KNOWN_MD5` in `patch.sh`.
 - Set `mode` to `uninstall`, plug in, wait for `uninstall: removed`, and reboot. The USB hook
   runs from mdev, independent of the UI, so this works even if Launcher doesn't come up.
 - A full stock reflash (`ISPBOOOT.BIN`, `nand erase.chip`) also wipes nvm.
+
+## guideline: reverse guide-line position test (nvm `libapis` override)
+`guideline/guideline.sh` installs a patched `libapis` as `/media/flash/nvm/libapis.so.1` (same mechanism as above, own
+`mode`/`log.txt`). Background and evidence: `docs/discoveries/reverse-camera-guide-lines.md`. Build the payload on the host:
+`python3 -I tools/build_guideline.py <stock libapis.so.1.0.0> tools/usb-patch/guideline/payload --up 40` (also `--down N`).
+Stock md5 `6f02e18a787acf3ce0e5afda3b7bfec5`; the `--up 40` test build is `03476349f1048a635b5d19fb0203f9a2` (one byte,
+file 0x5065a `6f`→`47`). The script aborts unless stock md5, payload md5, payload size and free space check out, and keeps a
+copy of the stock library on the stick. Needs a `gemn_auto.sh` line: `[ -f "$USB/guideline/guideline.sh" ] && sh "$USB/guideline/guideline.sh"`.
+Test: set "Reversing Guidance Line" ON, `mode`=`install`, plug in, cold boot, plug in again (log shows which `libapis`
+Launcher mapped), look at the reverse view: lines should sit 40 px higher. Revert: `mode`=`uninstall`, plug in, reboot.
+**Do not run it together with another nvm-override test** (e.g. `datefmt`): a UI change would not be attributable.

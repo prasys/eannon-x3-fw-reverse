@@ -4,6 +4,7 @@
  "file": "libinfomodule.so (X3_20250718, /application/lib/module/default/); requires patch B",
  "applies_to_md5": "68f0bcf18a4790f749e47fa44bf303c5",
  "patched_md5": "13dc16cefa948c1cc9914a15ef6560b2",
+ "md5_note": "the md5s above are for the owner's installed build, which carries the language string tables (a separate build; tools/strings/i18n is not in the repo). The patch C code bytes are identical for any string tables, but the whole-file md5 depends on them: tools/build_payload.py --daynight with tables_final.json gives cf3cb416b72f7fb4d576e95095c2b7a7 (code identical, string/data bytes differ). patch.sh accepts any payload whose .md5 sidecar matches.",
  "changes": [
   {"vaddr": "0x41ef2024", "file_offset": "0x42024", "len": 8,
    "old": "f2f7e0eaf2f794ef", "new": "f7fffe82 bf00 bf00 (bl 0x41ef1d2c; nop; nop)",

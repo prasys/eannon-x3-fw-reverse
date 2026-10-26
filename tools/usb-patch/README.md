@@ -21,7 +21,7 @@ x3patch/log.txt         written by the unit
 | patch B (Emperor restore, FINDINGS 9) | `fae35255cfc28d530fa100af5cab4c4d` |
 | string fixes only (FINDINGS 11) | `c8fceef18c51ab983634744470663672` |
 | patch B + string fixes | `573843500395e13431fde51d2d5f1422` |
-| patch C (day/night, FINDINGS 15.8) on the installed B + strings payload | `13dc16cefa948c1cc9914a15ef6560b2` (accepted via its `.md5` sidecar; build with `tools/apply_daynight.py`) |
+| patch C (day/night, FINDINGS 15.8) on the installed B + strings payload | `13dc16cefa948c1cc9914a15ef6560b2` (accepted via its `.md5` sidecar; build with `tools/apply_daynight.py`). The md5 depends on the string tables: a from-stock build with `tools/build_payload.py --daynight` and `tables_final.json` gives `cf3cb416b72f7fb4d576e95095c2b7a7` (same code, different string bytes). The language build is a separate task |
 
 String builds come from `tools/strings/strtab.py build <stock or patch B lib>
 tools/strings/overrides.json <out>`. If `overrides.json` changes, the md5 changes too:

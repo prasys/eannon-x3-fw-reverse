@@ -16,3 +16,4 @@ Short, current summaries. Each links back to the evidence in `docs/FINDINGS.md`.
 | MCU image header | [mcu-image-header.md](mcu-image-header.md) | decoded, payload encrypted |
 | Reboot incident | [reboot-incident.md](reboot-incident.md) | mitigated |
 | Date format YYYY-MM-DD to DD-MM-YYYY | [date-format-ddmmyyyy.md](date-format-ddmmyyyy.md) | parked: nvm override does not load plugins |
+| Automatic DST / region timezone | [auto-dst-region.md](auto-dst-region.md) | analysed, nothing run |

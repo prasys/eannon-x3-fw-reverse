@@ -24,3 +24,8 @@ tools/usb-patch/x3patch/log.txt
 
 __pycache__/
 *.pyc
+
+# guideline payload
+tools/usb-patch/guideline/payload/
+tools/usb-patch/guideline/log.txt
+tools/usb-patch/guideline/stock/

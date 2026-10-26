@@ -19,6 +19,8 @@ USB=$(dirname "$0")
 [ -f "$USB/x3patch/patch.sh" ] && sh "$USB/x3patch/patch.sh"
 # Wi-Fi AP 40 MHz patch / health check (tools/usb-patch/wifi40), before the wifi/ capture
 [ -f "$USB/wifi40/wifi40.sh" ] && sh "$USB/wifi40/wifi40.sh"
+# reverse guide-line position test (tools/usb-patch/guideline), nvm libapis override
+[ -f "$USB/guideline/guideline.sh" ] && sh "$USB/guideline/guideline.sh"
 OUT=$USB/diag
 RAM=/tmp/x3diag
 NVM=/media/flash/nvm/Sunplus

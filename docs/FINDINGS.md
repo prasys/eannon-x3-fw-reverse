@@ -455,6 +455,8 @@ MACs, hotspot passphrase) stay out of the repo.
   both true** (720P margins 256×120, density 213), touch 1024×600. The spsdk copy is
   the 800×480, 480P-only SDK default. `spsdk/etc/accessory/androidauto_config.xml` is a
   third, older-format copy.
+  Details, the parse chain, all keys and the bind-mount fix: `docs/discoveries/android-auto-identity-and-settings.md`
+  (the path is hardcoded in `libandroidautomodule` @ file 0x37954; the parser is `aa_accessory_service` FUN_0012e410; *decompiler*).
 - CarInfo is SDK placeholder: `Rolls-Royce / Phantom / 2016`, head unit `XXCompany /
   XXModel / XXOS 0.1`. That's what the phone shows as the car name.
 - Sensors advertised: location, compass, speed, parking brake, night mode, driving

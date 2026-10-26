@@ -11,6 +11,7 @@ Short, current summaries. Each links back to the evidence in `docs/FINDINGS.md`.
 | nvm library override | [nvm-library-override.md](nvm-library-override.md) | proven (stock copy) |
 | UI strings / languages | [ui-string-tables.md](ui-string-tables.md) | built, unreviewed on unit |
 | Wi-Fi AP, Android Auto, CarPlay | [wifi-ap-and-android-auto.md](wifi-ap-and-android-auto.md) | HT40 verified |
+| Android Auto identity (Rolls-Royce) and AA settings | [android-auto-identity-and-settings.md](android-auto-identity-and-settings.md) | source found, untested |
 | USB autorun hook | [usb-autorun-hook.md](usb-autorun-hook.md) | working |
 | Firmware layout, storage, boot | [storage-and-boot.md](storage-and-boot.md) | parsed |
 | MCU image header | [mcu-image-header.md](mcu-image-header.md) | decoded, payload encrypted |

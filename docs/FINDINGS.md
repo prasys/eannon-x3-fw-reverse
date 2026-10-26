@@ -702,3 +702,14 @@ are larger than the image slots in 2.3.
   built by a script that was never committed; `tables_final.json` is its recovered input.
   If you want the rebuilt one on the stick, its md5 goes in `payload/libinfomodule.so.md5`.
 - `nl` has no table in this build (NULL), so it can't be translated by this method (see strtab.py).
+
+## 13. Home date format YYYY-MM-DD (2026-10-26, exploration; detail in `docs/discoveries/date-format-ddmmyyyy.md`)
+- `HomeWidget::timeDateSlot()` @ 0x13b48 (`libhomelauncher.so`, md5 `a29d979a…`) formats the Home date with
+  `QDateTime::toString("yyyy-MM-dd")`; the pattern is at file offset 0x1846b and has exactly one code reference
+  (0x13b5e/0x13b66). *strings, assembly*
+- No other date pattern exists in `spapp`. Bars and tips show `hh:mm`/`hh:mm AP` only (`BaseBar::showTimer`,
+  `ComTipsWidget::initTimeSlot`). Setup > Time uses separate Year/Month/Day columns (`Ui_SetupTimeForm::setupUi`
+  @ 0x41b08, `libsetupviews`). *assembly, decompiler*
+- Candidate patch: 10 bytes at 0x1846b, `yyyy-MM-dd` to `dd-MM-yyyy`. Prepared offline only; not run on the unit.
+- Delivery open: the lib is an activity plugin loaded by full path (`/application/lib/activity/default`,
+  `QPluginLoader`), so the nvm `LD_LIBRARY_PATH` override probably does not apply. *inferred; needs a runtime test*

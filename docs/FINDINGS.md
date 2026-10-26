@@ -725,12 +725,11 @@ are larger than the image slots in 2.3.
   still needs the overnight Emperor test; the map line alone shows it is loaded.
 - **Override scope.** Works for libraries resolved by soname through `LD_LIBRARY_PATH` (`libinfomodule`). Does **not** work for plugins
   loaded by full path: the nvm `libhomelauncher.so` was never mapped. *runtime* (section 13). Plugins (`spapp/lib/activity`, `spapp/lib/module`)
-  need a reflash or a bind mount. Not yet proven for `libapis` (a `NEEDED` lib, so expected to work).
+  need a reflash or a bind mount. Proven for `libapis` too: with the `--up 40` payload (md5 `03476349…`) in nvm, a cold boot mapped only `/tmp/sp/media/flash/nvm/libapis.so.1` (stock not mapped). *runtime*
 - **Auto DST** (`docs/discoveries/auto-dst-region.md`, static only): no tzdata and no `TZ`; the MCU RTC owns the clock and re-pushes h:m,
   so `TZ` alone would be undone. Suggested route: a `libinfomodule` patch stepping the clock at DST boundaries. Unrun.
 - **Android Auto identity** (`docs/discoveries/android-auto-identity-and-settings.md`): "Rolls-Royce/Phantom/2016" is
   `CarInfo` in the read-only `androidauto_config.xml`, path hardcoded in `libandroidautomodule`. No-reflash route: bind-mount an edited copy
   from the USB hook each boot. Wireless AA depends on the SSID not being `DEMO-WiFi-AP`. `system.RightDrive` is the driving-side key. Untested.
 - **Reverse guide lines** (`docs/discoveries/reverse-camera-guide-lines.md`): the unit draws a static 1024x233 8-bit bitmap in `libapis`
-  (file 0x623b4), y offset at 0x5065a. No steering input. A `libapis` nvm override is the delivery route, with a ready test script in
-  `tools/usb-patch/guideline`. Untested.
+  (file 0x623b4), y offset at 0x5065a. No steering input. The `libapis` nvm override loads (see above); the visual shift (`--up 40` test) is pending the owner's photos.

@@ -1,5 +1,5 @@
 # Reverse-camera guide lines (Toyota Prius camera, lines misaligned)
-**Status:** analysed statically, nothing tested on the unit. Evidence tags: *parsed / strings / decompiler / assembly /
+**Status:** override of `libapis` via nvm proven on the unit (2026-10-26, *runtime*, see "Test run 1"); visual result pending. Evidence tags: *parsed / strings / decompiler / assembly /
 runtime / inferred*. Firmware `X3_20250718`; offsets are file offsets in the stock files under `fw/fs/spapp/`.
 
 ## Short answer
@@ -115,3 +115,12 @@ full path" caveat applies: if the stock copy wins, a patch is harmless but has n
 * Which of 0x99/0x9a is labelled On or Off in the UI (that `true` means lines drawn is *assembly*-verified).
 * Whether the Prius lines come from the camera or a Toyota parking ECU; the unit only sees CVBS.
 * The other two callers of `FUN_41ee9fb8`.
+
+## Test run 1 (2026-10-26, *runtime*: `guideline/log.txt`)
+Payload: stock libapis with `--up 40` (file 0x5065a `6f`->`47`, md5 `03476349f1048a635b5d19fb0203f9a2`).
+* Before restart: Launcher mapped only `/tmp/sp/application/lib/libapis.so.1.0.0` (stock).
+* `install: OK` at 14:47:17 (nvm copy md5 matches payload; nvm free ~11.9 MB before, ~11.3 MB after).
+* After car off/on (uptime 17 s): Launcher maps **only** `/tmp/sp/media/flash/nvm/libapis.so.1`. The stock copy is not
+  mapped (unlike `libinfomodule`, which was mapped twice), and the UI started normally.
+* So the nvm override works for `libapis`, and `ParklineCtrl` is called from the UI process that loaded it.
+* Visual shift: see the owner's before/after photos (not in the repo).

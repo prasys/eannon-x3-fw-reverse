@@ -186,12 +186,11 @@ Home screen: `lib/activity/default/libhomelauncher.so`.
   no reflection, no final XOR. The payload CRC covers the *encrypted* bytes, so the container
   can be checked without decrypting. (The header CRC span is only pinned down up to
   leading zero bytes: any start 0x10–0x12 gives the same value.)
-- Entropy is ~7.99 across 0x0–0x5ffff, so the code is **encrypted/scrambled**
-  (JieLi uses a chip-keyed scrambler on flash images; *inferred*, needs confirming
-  with public JieLi tooling). Only the lib-banner table around 0xd400 is plaintext.
+- Entropy is ~7.99 across 0x0–0x5ffff: the flash image is **scrambled**. *Decrypted 2026-10-31, see section 17*
+  (scheme from kagaimiq/jielie). Only the lib-banner table around 0xd400 is plaintext in the raw file.
 - Tail: the last bytes of the payload (to 0x61200) are 0xFF padding with a `BOOT_START_FIRST` marker at 0x611e0.
-- **No disassembly possible until it's descrambled.** Out of scope for now. Treat
-  MCU behaviour as a black box seen through `mcusrv`'s UART protocol.
+- The decrypted application is JieLi **pi32** code (not ARM), so our ARM tooling can't read it; see section 17 for next steps.
+  Until that is done, treat MCU behaviour as a black box seen through `mcusrv`'s UART protocol.
 
 ---
 
@@ -250,7 +249,7 @@ reset after ACC off/on. Bluetooth and other settings survive.
   assembly.* So the "power state" is the MCU's **RstMemory** flag, and
   whenever the MCU reports it, the saved EQ is ignored and factory defaults are
   applied. BT settings aren't gated like this, which explains why they survive.
-- **Not verified:** when the JieLi MCU sends RstMemory≠0 (its firmware is encrypted).
+- **Not verified:** when the JieLi MCU sends RstMemory≠0 (its firmware is now decryptable, section 17, but the code is not yet analysed).
   Candidates: every cold boot (e.g. constant +12 V lost, or the yellow wire on ACC), or
   every ACC cycle. To check: on the UART console, watch the qDebug line printed by
   `updateSystemRstMemory` (logs the value) during an ACC off/on.
@@ -408,7 +407,7 @@ Six snapshots in one boot. Logs merged, deduped, and bucketed by timestamp (the 
       the uImage CRCs, splice back into `ISPBOOOT.BIN`. Test on hardware with a
       UART attached and a known-good image on hand.
 - [ ] Find which binary holds `120.77.203.1` / `47.92.37.111`.
-- [ ] JieLi `JL_UDFIR` header fields + descrambling (only if an MCU-side bug needs it).
+- [x] JieLi `JL_UDFIR` header fields + descrambling (header 2026-10-26, decryption 2026-10-31, section 17).
 
 ---
 
@@ -862,6 +861,23 @@ Detail and wire table: `docs/MCU_PROTOCOL.md` ("Key light colour"). Nothing here
   `MCUControl::send_mcu_led_color(idx)` with idx 1..8 (0 = off). Idx came from `movs r1,#N` in the assembly; names from `objdump -R` on the GOT slots
   behind the per-case literals. *assembly + parsed*
 - mcusrv `FUN_00012c14` frames it as `58 02 idx-1` (idx 1-7), `58 03 01` (idx 8, Auto), `58 04 00` (off). *decompiler*
-- **The SoC sends a palette index, not RGB.** The shade of each colour is defined in the MCU firmware (encrypted, not readable). So "tweak the colour"
+- **The SoC sends a palette index, not RGB.** The shade of each colour is defined in the MCU firmware (in the MCU firmware, now decryptable per section 17 but not yet located). So "tweak the colour"
   from userland means choosing a different index, or patching mcusrv to pass other bytes (MCU behaviour on out-of-range values unknown, *unverified*).
 - With `setupIllCtrl` = follow-ILL and ILL off, the colour is saved but not sent (the `systemIllCtrl()==0xa2 && detectIll()==0` guard). *decompiler*
+
+---
+
+## 17. MCU firmware decrypted (2026-10-31)
+Detail and recipe: `docs/discoveries/mcu-firmware-decryption.md`. Tool: `python3 -I tools/jieli_decrypt.py <mcu8368u.bin> <out_dir>`.
+Credit: the scheme and flash layout come from **kagaimiq/jielie** (`misc/cipher.md`, `periph/sfc.md`, `datafmt/br17-fw.md`), re-implemented here.
+- The payload at file 0x200 is an AC690x/BR17 flash image. Header and bootloader decrypt with key 0xFFFF; `user.app` decrypts with the chip key
+  0x3496 (decoded from `chip_key.bin` at file 0x605a0), per 32-byte block with `key ^ (offset_in_area >> 2)`. *ran on our image*
+- Verified: flash-header CRC, bootloader bank CRCs, and the CRC of all four files inside `user.app` (`sdram.app` 0x4e8e6 B, `bt_cfg.bin`,
+  `fast_run.bin`, `ring.mp3`). `sdram.app` entropy is 6.78 (code). *ran on our image*
+- `sdram.app` is the JieLi soundbox SDK (`soundbox_sdk_v2-0-9`, build "Jul 23 2024 16:17:25"), JieLi **pi32** instruction set. *strings*
+- It holds a CRC16 table, poly 0x8432 MSB-first, at `sdram.app` 0x3f5c4 (starts `0000 3284 568c 6408`): the MCU side of the UART CRC in
+  `docs/MCU_PROTOCOL.md`. Also the strings `RECEIVE_CMD!` and `/jl_690x.bfu`. *strings + hexdump*
+- **Not done:** no pi32 disassembly yet; the `0x58` handler and the colour table are not located (a crude RGB-triplet search found nothing, so the
+  values may be PWM duty). Next step: `kagaimiq/ghidra-jieli` (tracked in a GitHub issue), start from the CRC table's xrefs.
+- Safety unchanged: decryption is read-only. Re-encrypting and flashing a modified MCU image is **not** in scope without an explicit go-ahead
+  and a recovery plan; never send cmd 0x75.

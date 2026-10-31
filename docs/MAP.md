@@ -10,7 +10,7 @@ those). The evidence behind each entry is in `FINDINGS.md`.
 | What | Where |
 | --- | --- |
 | SoC update image | `fw/X3_20250718.zip` → `ISPBOOOT.BIN` (sha256 `93d14858…cf1e2`) |
-| MCU image | `fw/X3-series MCU_240723.zip` → `mcu8368u.bin` (JieLi AC690x, encrypted) |
+| MCU image | `fw/X3-series MCU_240723.zip` → `mcu8368u.bin` (JieLi AC690x; decrypt with `tools/jieli_decrypt.py`, FINDINGS 17) |
 | USB diag captures | the `X3DIAG` stick → `diag/<boot_id>_<n>/` (personal data, keep out of git) |
 
 ## ISPBOOOT.BIN layout

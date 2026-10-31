@@ -69,6 +69,7 @@ Machine-readable routing is in `agents/delegation.json`; summary:
 | `tools/usb-patch/x3patch/patch.sh` | install or uninstall the nvm library override |
 | `tools/usb-patch/wifi40/wifi40.sh` | HT40 Wi-Fi patch with auto-undo |
 | `tools/jl_udfir.py` | parse and verify the MCU image header and CRCs |
+| `tools/jieli_decrypt.py` | decrypt the MCU image into `uboot.boot.dec`, `user.app.dec`, `sdram.app` etc. (read-only) |
 | `tools/gotres.py`, `tools/annotate_strings.py` | resolve GOT refs and PC-relative strings in Ghidra exports |
 
 Host (macOS): Ghidra 12.2 headless (`JAVA_HOME=/opt/homebrew/opt/openjdk@21`; check the export ends with

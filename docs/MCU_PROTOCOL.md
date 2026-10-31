@@ -81,7 +81,7 @@ method names by aligning mcusrv's table at file 0x139ac with `_ZTV11BpMCUStatus`
 | 0x7b | 0x12af4 | `send_mcu_vbus_power` (also USB VBUS thread, "MCU USB %d Power ON/OFF") | 2 |
 | 0x10 | 0x12b54 | `send_mcu_backlight_switch` | 2 |
 | 0x1a | 0x12bb4 | `send_mcu_amp_switch` | 2 |
-| 0x58 | 0x12c14 | `send_mcu_led_color` | 3 |
+| 0x58 | 0x12c14 | `send_mcu_led_color(idx)`: idx 1-7 → `58 02 idx-1`, idx 8 → `58 03 01`, idx 0 or >8 → `58 04 00` (see Key light below) | 3 |
 | 0x79 | 0x12ce4 | `send_mcu_ill` | 2 |
 | 0x7d | 0x12d44 | `send_mcu_vcom_pwm` | 2 |
 | 0x36 | 0x12db4 | `send_mcu_time(h,m,s)` (same id as RX time) | 4 |
@@ -103,6 +103,24 @@ method names by aligning mcusrv's table at file 0x139ac with `_ZTV11BpMCUStatus`
 Cmd bytes come from the first constant assigned in each function. Ones without a
 ✓ are *decompiler-inferred*; check the two `cmd~1` cases (0x13014 / 0x13148) and
 `power_status` (constant 0) against the assembly.
+
+## Key light colour (`send_mcu_led_color`, 0x58)
+The SoC sends a palette **index**, not RGB. `SetupExec::exec_keylight(setup_keylight_e)` @ libinfomodule 0x41eea294 sets r1 per
+enum (*assembly*; names via `objdump -R` on the GOT slots the per-case literals point to):
+
+| enum | setting | idx | wire (`58 mode arg`) |
+| --- | --- | --- | --- |
+| 0x1d | Red | 1 | `58 02 00` |
+| 0x1e | Green | 2 | `58 02 01` |
+| 0x1f | Yellow | 3 | `58 02 02` |
+| 0x20 | Blue (`Bule`) | 4 | `58 02 03` |
+| 0x21 | Purple | 5 | `58 02 04` |
+| 0x22 | Cyan | 6 | `58 02 05` |
+| 0x23 | White | 7 | `58 02 06` |
+| 0x24 | Auto | 8 | `58 03 01` |
+| other | Off | 0 | `58 04 00` |
+
+The actual RGB/PWM for each index lives in the (encrypted) MCU firmware; not verified on the wire. *decompiler (mcusrv) + assembly (app)*
 
 ## Other sub-modules (strings)
 - `MCUKey`: keys arrive and are injected into `/dev/sp_virt_kb`

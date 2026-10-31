@@ -877,7 +877,28 @@ Credit: the scheme and flash layout come from **kagaimiq/jielie** (`misc/cipher.
 - `sdram.app` is the JieLi soundbox SDK (`soundbox_sdk_v2-0-9`, build "Jul 23 2024 16:17:25"), JieLi **pi32** instruction set. *strings*
 - It holds a CRC16 table, poly 0x8432 MSB-first, at `sdram.app` 0x3f5c4 (starts `0000 3284 568c 6408`): the MCU side of the UART CRC in
   `docs/MCU_PROTOCOL.md`. Also the strings `RECEIVE_CMD!` and `/jl_690x.bfu`. *strings + hexdump*
-- **Not done:** no pi32 disassembly yet; the `0x58` handler and the colour table are not located (a crude RGB-triplet search found nothing, so the
-  values may be PWM duty). Next step: `kagaimiq/ghidra-jieli` (tracked in a GitHub issue), start from the CRC table's xrefs.
+- **pi32 analysis (2026-10-31).** `sdram.app` loads at **0x01000000** (SFC map; *parsed*: 553 of 1040 high pointers land on string starts vs 1 of 107 at base 0;
+  the CRC-table pointer 0x0103f5c4 sits at file 0x824). It is not banked. `kagaimiq/ghidra-jieli` compiled with Ghidra 12.2's `sleigh` unmodified and was
+  picked up as `pi32:LE:32:default` from a user-level Extensions dir. The entry point must be seeded by hand, and Ghidra misses much of the code
+  (noreturn mis-flags, unresolved tbb/tbh tables), so the listings used `Seed*.java` fixes. Decompiler output is poor (unresolved pcode); the disassembly is the reference.
+  pi32 rules used: PC-relative `lw` pool = (pc+imm+3)&~3 for the 4-byte form, tbb/tbh target = instr_addr + 2*(entry+1). *assembly; agents differed by 1 in the
+  pool-rounding description, so re-verify before relying on a single pool address*
+- **UART link:** frame `FF AA LEN P CHK CRC16`, CRC covers LEN+4 bytes from FF, init 0, big-endian; MCU accepts LEN <= 0x31; bad frames dropped silently.
+  RX parser is a state machine in `MainTask`; dispatch via two tbh tables + compare chain at 0x0100df34. Command table, TX builder and the `RECEIVE_CMD!`
+  clarification (a 12-byte debug print, not the parser) are in `docs/MCU_PROTOCOL.md`. 0x1a is not dispatched; 0x78/0x7c are no-ops. *assembly*
+- **Key light (0x58):** handler 0x0100e33c; palette idx 0..6 (table 0x0100c936) sets three bytes to 0x3f/0, consumed as on/off bits for 3 GPIO outputs
+  (inferred PORTC PC3/PC2/PC1; no PWM/LEDC/timer writes found). Auto (`P1=3`) cycles the 7 colours on a timer; `P1=4` is off. **Custom colours are not
+  possible via the SoC**; only a patched MCU image could add them. Unverified: which pin is which channel, the Auto period, other writers in undisassembled gaps. *assembly + inferred*
+- **RstMemory (0x39):** MCU to SoC only (incoming 0x39 is a no-op). The byte is RAM at 0x003025f4 (zeroed at boot; not RTC/flash/latch). Set to 1 at
+  boot (0x0100da10) when byte 0x003022f2 is 0, **cleared to 0 at 0x0100d2ca right after the frame is built**, with or without an ack. So the SoC sees 1 at most once
+  per MCU reset and 0 afterwards. 0x003022f2 is written once in `main()` (0x0100a18e) from SYSCFG PWR (0x60040) RSRC bits 7:5 (1 if RSRC is 3 or 4, logs "wko rst";
+  else 0, "power rst"). The sender is the power-on sequence `FUN_0100ccf8` (state 3, 0x0100d29a), which only sends 0x39 if SoC cmd **0x77** (handler 0x0100e140) has set
+  [0x302a80+0x9b]; without 0x77 no 0x39 is sent and a countdown aborts the sequence. No "ACC off for N seconds" timeout exists in this logic. *assembly; RSRC value meanings are from the jielie docs (0 power-on, 1 VCM, 2 key, 3 LVD, 4 WDT, 5 soft), unchecked on this chip*
+  - Reading it as written: by the code, a flag of 1 is reported unless the MCU's last reset was LVD or watchdog, i.e. 1 follows power-on, VCM, key or soft reset. The sign looks
+    odd against the app's use of it (the "restore" gate), so which value the app treats as "restore" must be re-checked against 5.2 before concluding anything. *inferred*
+  - Hypotheses to test on hardware (cheap): (a) does the MCU lose power on each ACC cycle (its clock reverts to 2020-01-01 at 0x0100d9c4 when 0x003022f2 is 0)? (b) is the SoC seeing
+    the single 0x39 frame at all, or does it never arrive because 0x77 is not sent? Capture `updateSystemRstMemory` value and the unit date across an ACC cycle.
+  - SoC-side options: clamp/ignore the flag in `updateSystemRstMemory` or libsetupmodule (patch A), or drop 0x39 in mcusrv. The MCU never waits on it. *inferred, untested*
+- **0x75** handler (0x0100e0f0): control flow only (returns if flag [..+0x55]==0, else sets [..+0x57]=7, branches on P1 0/1/3). What it does is not established. Still never send it.
 - Safety unchanged: decryption is read-only. Re-encrypting and flashing a modified MCU image is **not** in scope without an explicit go-ahead
   and a recovery plan; never send cmd 0x75.

@@ -1,5 +1,5 @@
 # MCU firmware decryption (JieLi AC690x / BR17)
-**Status:** decrypts and validates (2026-10-31). Code not yet analysed. FINDINGS 17.
+**Status:** decrypts and validates (2026-10-31). First pi32 pass done: UART parser, 0x58 and RstMemory located. FINDINGS 17, `docs/MCU_PROTOCOL.md`.
 
 **Credit:** the cipher, flash scramble and BR17 layout were documented by **kagaimiq** in
 [kagaimiq/jielie](https://github.com/kagaimiq/jielie) (`misc/cipher.md`, `periph/sfc.md`, `datafmt/br17-fw.md`,
@@ -21,9 +21,13 @@ has no `JL_UDFIR` page, so the container-to-flash step (payload at 0x200 is the 
 - CRC16 table poly 0x8432 MSB-first at 0x3f5c4. `RECEIVE_CMD!`, `/jl_690x.bfu`, update sources (`uart_updata`, `usb_updata`, `bt_updata`, `ble_update`).
 - Instruction set is JieLi **pi32** (`cpu/pi32.md`), so no ARM tooling works on it. *inferred from the repo docs*
 
+## Results of the pi32 pass
+Base 0x01000000, ghidra-jieli works with Ghidra 12.2 (see FINDINGS 17 for method and caveats). Key light is 3 on/off GPIO bits (7 colours + off, no custom
+colours). RstMemory is a RAM flag cleared right after it is sent once; set from the MCU reset cause. Parser and command table are in `docs/MCU_PROTOCOL.md`.
+
 ## Open
-- Key-light palette (cmd 0x58 index to colour), RstMemory (cmd 0x39) logic, command dispatch from `RECEIVE_CMD!` / the CRC table xrefs.
-- `kagaimiq/ghidra-jieli` (linked from `links.md`) not read yet.
+- Pin-to-colour wiring, Auto cycle period, the cmd 0x77 payload, uart0 role, real RSRC across an ACC cycle (needs a hardware capture), undisassembled gaps (~90 KB).
+- Handler bodies other than 0x58 / 0x39 TX / 0x75 control flow.
 
 ## Safety
 Read-only. Do not re-encrypt or flash a modified image, and never send MCU cmd 0x75, without the owner's explicit go-ahead and a recovery plan.

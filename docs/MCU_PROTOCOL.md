@@ -6,6 +6,10 @@ Ghidra export annotated with `tools/annotate_strings.py`. Nothing here has been
 observed on the wire yet (we can't sniff `ttyS1` without stealing bytes from mcusrv).
 Evidence: *decompiler* unless marked.
 
+## MCU side
+The MCU firmware (`sdram.app`, JieLi pi32) is decryptable (`docs/discoveries/mcu-firmware-decryption.md`). It contains the poly 0x8432 CRC16 table
+at `sdram.app` 0x3f5c4, which confirms the CRC below on the MCU end. The command handlers are not analysed yet.
+
 ## Link
 - `/dev/ttyS%d` with port argument `1` → **`/dev/ttyS1`, 115200 baud**
   (`appinfo.rc`: `mcusrv 1 115200`; strings `"/dev/ttyS%d"`, `"------->uartBaud=%d"`).

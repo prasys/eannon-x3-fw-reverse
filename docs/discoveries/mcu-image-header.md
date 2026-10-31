@@ -1,5 +1,5 @@
 # MCU image header (JieLi JL_UDFIR)
-**Status:** header fully decoded and verified; payload still encrypted. FINDINGS 3.
+**Status:** header fully decoded and verified; payload decrypted 2026-10-31 (`mcu-firmware-decryption.md`). FINDINGS 3, 17.
 
 - `fw/mcu/mcu8368u.bin` (397,824 bytes, md5 `63157019…`) is a JieLi upgrade container: 0x200-byte header plus a
   0x61000-byte payload for chip image `JL_690X.BIN` (AC690x / BR17 family; SDK banner `br17_v2-0-9`).
@@ -13,4 +13,4 @@
 - What this gives us: a way to confirm an MCU image is intact and to identify its chip family. What it does not
   give us: any view of the MCU code, so why the MCU reports RstMemory stays unknown.
 - Safety: nothing here modifies or flashes the MCU. A changed payload would need a valid CRC and would have to be
-  re-encrypted with the unknown scheme, so MCU changes are out of scope. `send_mcu_upgrade` (0x75) must never be sent.
+  re-encrypted (the scheme is now known, but MCU changes remain out of scope without an explicit go-ahead). `send_mcu_upgrade` (0x75) must never be sent.

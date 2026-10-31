@@ -109,6 +109,8 @@ Evidence: FINDINGS 8.5. The AP runs 5 GHz ch149 at **HT20** (802.11n, 72 Mbps PH
 - Next-day USB capture with the stick left in overnight (new boot_id? flags in logcat?).
 - `mcusrv` UART protocol (`libmcusrv.so`): unlocks MCU-side behaviour (RstMemory,
   power).
+- MCU firmware is decrypted (FINDINGS 17). Next: disassemble `sdram.app` (pi32) via `kagaimiq/ghidra-jieli`; find the 0x58 key-light colour
+  handler and what drives RstMemory (cmd 0x39). Read-only analysis; no flashing.
 
 ## Tooling to build
 1. `tools/usb-diag/`: done (v3: background logcat recorder with `-r2048 -n4`,

@@ -852,3 +852,16 @@ Nothing here has been run on the unit. Addresses are `libinfomodule.so` (prelink
   symptom**. The exact-match edge detector is still unproven in the field (ILL changing together with ACC); leave it unless it shows up.
 - `daynight_events.txt` stays empty, as predicted in 15.7: app debug lines do not reach logcat.
 - Not yet checked: a long (overnight) off, and `DimmerLevel` after several cycles with a non-default brightness.
+
+---
+
+## 16. Key light colour path (2026-10-31, static analysis only)
+Detail and wire table: `docs/MCU_PROTOCOL.md` ("Key light colour"). Nothing here has been run on the unit.
+- Setting keys are `SetupStrIdConst::setupKeylight{Off,Auto,Red,Green,Yellow,Bule,Purple,Cyan,White}`. `SetupExec::exec_keylight(setup_keylight_e)`
+  (libinfomodule 0x41eea294) maps enum 0x1d..0x24 → Red, Green, Yellow, Blue, Purple, Cyan, White, Auto and anything else → Off. It calls
+  `MCUControl::send_mcu_led_color(idx)` with idx 1..8 (0 = off). Idx came from `movs r1,#N` in the assembly; names from `objdump -R` on the GOT slots
+  behind the per-case literals. *assembly + parsed*
+- mcusrv `FUN_00012c14` frames it as `58 02 idx-1` (idx 1-7), `58 03 01` (idx 8, Auto), `58 04 00` (off). *decompiler*
+- **The SoC sends a palette index, not RGB.** The shade of each colour is defined in the MCU firmware (encrypted, not readable). So "tweak the colour"
+  from userland means choosing a different index, or patching mcusrv to pass other bytes (MCU behaviour on out-of-range values unknown, *unverified*).
+- With `setupIllCtrl` = follow-ILL and ILL off, the colour is saved but not sent (the `systemIllCtrl()==0xa2 && detectIll()==0` guard). *decompiler*

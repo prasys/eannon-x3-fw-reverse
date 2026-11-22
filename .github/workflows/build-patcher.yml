@@ -1,0 +1,96 @@
+name: Build Eanon X3 Patcher (Windows)
+
+on:
+  push:
+    branches: [main, "prasys/patcher-gui"]
+    tags: ["v*"]
+    paths:
+      - "tools/patcher/**"
+      - "tools/usb-diag/gemn_auto.sh"
+      - "tools/usb-patch/x3patch/patch.sh"
+      - "tools/usb-patch/wifi40/wifi40.sh"
+      - "tools/strings/tables_final.json"
+      - ".github/workflows/build-patcher.yml"
+  pull_request:
+    paths:
+      - "tools/patcher/**"
+      - ".github/workflows/build-patcher.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Core Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run core unit tests
+        run: python -m unittest discover -s tools/patcher/tests -v
+      - name: Run CLI self-test
+        run: python tools/patcher/main.py --self-test
+
+  build-windows:
+    name: Build Windows .exe
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tools/patcher/requirements-build.txt
+      - name: Verify GUI module imports cleanly on Windows
+        run: python -c "import tools.patcher.gui.app; print('GUI import OK')"
+      - name: Build standalone Windows executable with PyInstaller
+        run: pyinstaller --clean --noconfirm tools/patcher/x3_patcher.spec
+      - name: Smoke-test built executable
+        shell: pwsh
+        run: |
+          $exe = "dist\EanonX3-Patcher.exe"
+          if (!(Test-Path $exe)) { throw "Missing $exe" }
+          $out = "self_test_out.txt"
+          $p = Start-Process -FilePath $exe -ArgumentList "--self-test", "--self-test-out", $out -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Self-test exited with $($p.ExitCode)" }
+          Get-Content $out
+          if ((Get-Content $out -Raw) -notmatch "self-test OK") { throw "Unexpected self-test output" }
+          Copy-Item $exe "dist\EanonX3-Patcher-Windows-x64.exe"
+      - name: Upload Windows .exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EanonX3-Patcher-Windows-x64
+          path: dist/EanonX3-Patcher-Windows-x64.exe
+          if-no-files-found: error
+      - name: Attach .exe to GitHub Release (on v* tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Eanon X3 USB Patcher ${{ github.ref_name }}"
+          generate_release_notes: true
+          body: |
+            ## Eanon X3 USB Patcher (Windows x64)
+
+            Standalone GUI for preparing Eanon X3 (`X3_20250718`) patch, diagnostic, and recovery USB sticks — no Python or command line required.
+
+            ### Quick Start
+            1. Download **`EanonX3-Patcher-Windows-x64.exe`** below.
+               *(Because the build is unsigned, Windows SmartScreen may show "Windows protected your PC" — click **More info → Run anyway**.)*
+            2. Plug in a **FAT32 (MBR)** USB flash drive and run the app.
+            3. Follow the 4 built-in steps:
+               - **Step 1:** Select your USB drive and either load `X3_20250718.zip` / `ISPBOOOT.BIN` **or** click **Prepare Read-Only Car Stick** to safely read the stock library & diagnostic logs directly from your head unit.
+               - **Step 2:** Toggle the patches you want (Emperor/DSP Restore, Day/Night ILL, UI Language Fixes, Wi-Fi 40 MHz) + optional deep diagnostics (`extras.flag`).
+               - **Step 3:** Follow the in-car checklist, then inspect logs or click **Export Safe Diagnostics (.zip)** to attach redacted logs to a GitHub issue.
+               - **Step 4:** 1-click **Undo / Restore Stock** at any time.
+
+            See [`tools/patcher/README.md`](https://github.com/prasys/eannon-x3-fw-reverse/blob/main/tools/patcher/README.md) for full details.
+          files: dist/EanonX3-Patcher-Windows-x64.exe

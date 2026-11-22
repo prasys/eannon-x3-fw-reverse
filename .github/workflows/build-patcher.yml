@@ -1,0 +1,78 @@
+name: Build Eanon X3 Patcher (Windows)
+
+on:
+  push:
+    branches: [main, "prasys/patcher-gui"]
+    tags: ["v*"]
+    paths:
+      - "tools/patcher/**"
+      - "tools/usb-diag/gemn_auto.sh"
+      - "tools/usb-patch/x3patch/patch.sh"
+      - "tools/usb-patch/wifi40/wifi40.sh"
+      - "tools/strings/tables_final.json"
+      - ".github/workflows/build-patcher.yml"
+  pull_request:
+    paths:
+      - "tools/patcher/**"
+      - ".github/workflows/build-patcher.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Core Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run core unit tests
+        run: python -m unittest discover -s tools/patcher/tests -v
+      - name: Run CLI self-test
+        run: python tools/patcher/main.py --self-test
+
+  build-windows:
+    name: Build Windows .exe
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tools/patcher/requirements-build.txt
+      - name: Verify GUI module imports cleanly on Windows
+        run: python -c "import tools.patcher.gui.app; print('GUI import OK')"
+      - name: Build standalone Windows executable with PyInstaller
+        run: pyinstaller --clean --noconfirm tools/patcher/x3_patcher.spec
+      - name: Smoke-test built executable
+        shell: pwsh
+        run: |
+          $exe = "dist\EanonX3-Patcher.exe"
+          if (!(Test-Path $exe)) { throw "Missing $exe" }
+          $out = "self_test_out.txt"
+          $p = Start-Process -FilePath $exe -ArgumentList "--self-test", "--self-test-out", $out -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Self-test exited with $($p.ExitCode)" }
+          Get-Content $out
+          if ((Get-Content $out -Raw) -notmatch "self-test OK") { throw "Unexpected self-test output" }
+          Copy-Item $exe "dist\EanonX3-Patcher-Windows-x64.exe"
+      - name: Upload Windows .exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EanonX3-Patcher-Windows-x64
+          path: dist/EanonX3-Patcher-Windows-x64.exe
+          if-no-files-found: error
+      - name: Attach .exe to GitHub Release (on v* tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/EanonX3-Patcher-Windows-x64.exe

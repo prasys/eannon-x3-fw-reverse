@@ -80,6 +80,7 @@ The USB hook runs from mdev, independent of the UI, so this works even if the La
 ## Tools
 | Path | Use |
 | --- | --- |
+| `tools/patcher/` | **User-friendly GUI** (Windows `.exe` via GitHub Actions; cross-platform Python source) — pick a USB drive + firmware zip (or read safely from the car first), toggle patches, get step-by-step car instructions, inspect logs, export privacy-redacted diagnostics, or create an undo stick. See [`tools/patcher/README.md`](tools/patcher/README.md) |
 | `tools/usb-diag/gemn_auto.sh` | Read-only diagnostic snapshot per plug-in: settings diff, audio log window, Wi-Fi/AA state, redacted logs. `extras.flag` on the stick adds a hardware inventory and a 30 s input/UART capture. It also calls the patch scripts first |
 | `tools/usb-patch/x3patch/patch.sh` | Installs or removes the `libinfomodule.so` override. Checks the stock md5 and that the payload md5 is known. Keeps a copy of the replaced file |
 | `tools/usb-patch/wifi40/wifi40.sh` | HT40 patch with a health check and automatic undo if hostapd doesn't come up |

@@ -54,6 +54,10 @@ def _write_base_scripts(root: Path) -> list[str]:
 
 def _set_extras_flag(root: Path, enabled: bool) -> list[str]:
     flag = root / "extras.flag"
+    # Stale reboot-loop guard marker left by gemn_auto.sh if a previous extras run was cut short.
+    running = root / "extras.running"
+    if running.exists():
+        running.unlink()
     if enabled:
         _write_lf(flag, "1\n")
         return ["extras.flag"]
@@ -111,7 +115,7 @@ def prepare_read_from_car_stick(
         "Collects diagnostic logs and settings snapshots into diag/",
     ]
     if diag_extras:
-        summary.append("Includes deep hardware + 30-second UART/input capture (extras.flag)")
+        summary.append("Includes deep hardware + 30-second input capture (extras.flag); not needed for random reboot reports")
 
     steps = [
         "Safely eject this USB stick from your computer.",

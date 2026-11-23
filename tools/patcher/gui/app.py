@@ -336,7 +336,7 @@ class X3PatcherApp(ctk.CTk):
         ).grid(row=1, column=0, padx=14, pady=(0, 6), sticky="w")
         ctk.CTkCheckBox(
             opt2,
-            text="Include deep hardware & 30s UART logs (recommended if your unit randomly reboots / resets)",
+            text="Include deep hardware & 30s input capture (developer use only; leave off for reboot / reset reports)",
             variable=self.var_read_extras,
             font=ctk.CTkFont(size=11),
         ).grid(row=2, column=0, columnspan=2, padx=14, pady=(0, 10), sticky="w")
@@ -470,7 +470,7 @@ class X3PatcherApp(ctk.CTk):
         ).grid(row=1, column=0, padx=16, pady=(2, 6), sticky="w")
         ctk.CTkCheckBox(
             diag_card,
-            text="Enable deep hardware & 30-second UART/input capture (extras.flag — adds ~30s wait in car)",
+            text="Enable deep hardware & 30-second input capture (extras.flag; developer use only, adds ~30s wait in car)",
             variable=self.var_diag_extras,
             font=ctk.CTkFont(size=12),
         ).grid(row=2, column=0, padx=16, pady=(2, 12), sticky="w")

@@ -168,8 +168,19 @@ class TestUsbWriterAndInspector(unittest.TestCase):
             (root / "diag" / "runs.txt").write_text("2026-11-22 10:00:00 boot_id=aaaa1111 uptime=42s snap=aaaa1111_1 recorder=started\n", encoding="utf-8")
             (root / "x3patch" / "stock").mkdir(parents=True)
             (root / "x3patch" / "stock" / "keep.txt").write_text("keep", encoding="utf-8")
+            # Stale reboot-loop guard marker from an interrupted extras run must be cleared
+            (root / "extras.running").write_text("aaaa1111 10:00:00\n", encoding="utf-8")
 
             res = prepare_read_from_car_stick(root, diag_extras=True)
+            self.assertFalse((root / "extras.running").exists())
+            script = (root / "gemn_auto.sh").read_text(encoding="utf-8")
+            # These reads rebooted units (issue #6, FINDINGS 8); they must stay out of the script
+            code = "\n".join(l for l in script.splitlines() if not l.lstrip().startswith("#"))
+            self.assertNotIn("/proc/tty/driver/", code)
+            self.assertNotIn("pidof mcusrv", code)
+            self.assertNotIn("fw_printenv", code)
+            self.assertNotIn("nanddump", code)
+            self.assertIn("extras.running", code)
             self.assertEqual(res.action, "read_from_car")
             self.assertTrue((root / "extras.flag").is_file())
             self.assertEqual((root / "x3patch" / "mode").read_bytes(), b"status\n")

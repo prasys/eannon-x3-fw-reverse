@@ -16,7 +16,7 @@ A friendly, step-by-step desktop app for preparing Eanon X3 (`X3_20250718`) patc
      - **Day / Night Follows Headlights (Patch C)** — stops the screen from starting stuck in dim night mode (requires Patch B).
      - **UI Language & Translation Fixes** — fixes broken/untranslated labels across 20 languages.
      - **Wi-Fi 40 MHz (`wifi40`)** — upgrades the 5 GHz wireless AA/CarPlay AP to HT40, with automatic self-undo if Wi-Fi doesn't start.
-     - **Diagnostics & Logging** — automatically saves redacted logs to `diag/` (with an optional deep hardware/UART capture toggle for investigating random reboots).
+     - **Diagnostics & Logging** — automatically saves redacted logs to `diag/` (with an optional deep hardware/input capture toggle for developers; for random reboot reports, leave it off and just export the normal logs).
    - **Step 3 — Car Guide & Status:** Follow the numbered in-car checklist, then plug the stick back into your PC and click **Inspect USB Stick Now** or **Export Safe Diagnostics (.zip)** to share privacy-scrubbed logs on GitHub.
    - **Step 4 — Undo / Restore:** 1-click uninstall/recovery stick that cleanly removes overrides and restores stock behaviour.
 

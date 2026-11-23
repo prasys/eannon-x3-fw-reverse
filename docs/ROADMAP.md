@@ -12,6 +12,11 @@
 > reverse guide lines (`libapis` nvm override, test script ready). See `docs/discoveries/`. The reflash path (`repack.py`) now unlocks
 > the date and AA-XML fixes, so it moves up.
 
+> **Update (2026-11-23, issue #6):** the diag `extras` block reboots units 3 of 3 times at the mcusrv/`/proc/tty/driver` step
+> (FINDINGS 8). **Fixed in patcher v1.0.1:** block removed, `/proc/tty/driver/*` sampling dropped from the capture window, and an
+> `extras.running` guard skips extras after an interrupted run. The reporter's firmware
+> differs from X3_20250718 (libinfomodule md5 `6a5ce057…`), so get their image before offering patches.
+
 Ordered by value and risk. Each item points to its evidence in `FINDINGS.md`.
 
 ## Bug 1: Emperor / DSP settings not remembered (top priority)

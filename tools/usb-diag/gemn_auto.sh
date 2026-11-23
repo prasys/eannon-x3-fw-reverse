@@ -221,9 +221,18 @@ if [ "$(num_sta)" = 0 ] && ! { [ -f "$RAM/watch.pid" ] && kill -0 "$(cat "$RAM/w
 fi
 
 # --- extras: only when <usb root>/extras.flag exists (all read-only) ---
+# Reboot-loop guard: extras.running is left behind if the unit reboots mid-extras.
+# On the next boot extras are skipped (and the flag dropped) instead of looping.
+if [ -f "$USB/extras.flag" ] && [ -f "$USB/extras.running" ]; then
+	echo "extras skipped: previous extras run did not finish (unit rebooted?); extras.flag removed" >> "$SNAP/system.txt"
+	rm -f "$USB/extras.flag" "$USB/extras.running"
+	sync
+fi
 if [ -f "$USB/extras.flag" ]; then
 	X=$SNAP/extras
 	mkdir -p "$X"
+	echo "$BOOT_ID $(date '+%H:%M:%S')" > "$USB/extras.running"
+	sync
 	echo "extras start $(date '+%H:%M:%S')" >> "$SNAP/system.txt"
 
 	# system / hardware inventory
@@ -244,25 +253,14 @@ if [ -f "$USB/extras.flag" ]; then
 	# fw_printenv removed: unit rebooted during/just after this step (2026-10-25)
 	sync; echo "step getprop done" >> "$SNAP/system.txt"; sync
 
-	# mcusrv process + its serial port
-	MP=$(pidof mcusrv)
-	{
-		echo "== pid $MP"
-		for p in $MP; do
-			echo "== cmdline"; tr '\0' ' ' < /proc/$p/cmdline; echo
-			echo "== fds";     ls -l /proc/$p/fd
-			echo "== status";  cat /proc/$p/status
-			echo "== maps";    cat /proc/$p/maps
-		done
-	} > "$X/mcusrv.txt" 2>&1
-	for f in /proc/tty/driver/*; do echo "== $f"; cat "$f"; done > "$X/tty_driver.txt" 2>&1
-
-	# raw nanddump backups removed: raw NAND reads are suspected of the 2026-10-25 reboot
-	sync; echo "step mcusrv/tty done" >> "$SNAP/system.txt"; sync
+	# REMOVED (2026-11-23): /proc/<mcusrv>/{fd,status,maps} and /proc/tty/driver/* reads.
+	# The unit rebooted at this step in 3 of 3 runs on a user's unit (issue #6, FINDINGS 8),
+	# and it is the likely cause of the 2026-10-25 reboots too. Don't touch mcusrv or the
+	# Sunplus UART proc files from userspace. (fw_printenv and raw NAND/MTD reads stay removed.)
 
 	# 30 s capture window: press steering-wheel / panel keys, toggle things.
 	# Records raw input events (evdev allows several readers, Launcher still gets them)
-	# and samples the MCU UART counters once per second.
+	# and samples the UART IRQ counters (/proc/interrupts only) once per second.
 	echo "capture window start $(date '+%H:%M:%S')" >> "$SNAP/system.txt"
 	mkdir -p "$X/input"
 	PIDS=""
@@ -274,7 +272,6 @@ if [ -f "$USB/extras.flag" ]; then
 	while [ $i -lt 30 ]; do
 		echo "== t=$i $(date '+%H:%M:%S')"
 		grep -iE 'uart|ttyS|serial' /proc/interrupts
-		cat /proc/tty/driver/* 2>/dev/null | grep -E '^[0-9]+:'
 		sleep 1
 		i=$((i + 1))
 	done > "$X/uart_counters.txt" 2>&1
@@ -283,6 +280,7 @@ if [ -f "$USB/extras.flag" ]; then
 		[ -s "$f" ] && hexdump -v -e '4/4 "%08x " "\n"' "$f" > "${f%.raw}.txt"
 	done
 	echo "capture window end $(date '+%H:%M:%S')" >> "$SNAP/system.txt"
+	rm -f "$USB/extras.running"
 	sync
 fi
 

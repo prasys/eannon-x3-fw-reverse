@@ -542,6 +542,19 @@ MACs, hotspot passphrase) stay out of the repo.
   `/media/flash/nvm`, which is a normal file read).
 - No settings were lost as a side effect: `SETUPMENU.ini` is intact in both
   snapshots, and the unit came back up normally.
+- **Update 2026-11-23 (issue #6, a user's unit, firmware with libinfomodule md5 `6a5ce057…` ≠ X3_20250718):**
+  with `fw_printenv`/nanddump already removed, the reboot still happened in 3 of 3 runs
+  (boots `94c820d1`, `352adcbd`, `580f9559`). The last marker each time was `step getprop done`;
+  `mcusrv.txt` and `tty_driver.txt` were created but empty, and `step mcusrv/tty done` was never written.
+  So the trigger is reading `/proc/<mcusrv>/{fd,status,maps}` or `/proc/tty/driver/*` (Sunplus_UART,
+  ttyS 64-68), **not** fw_printenv. *runtime (step markers)*; which of the two reads it is remains unknown.
+  Removed in patcher v1.0.1, along with the per-second `/proc/tty/driver/*` sampling in the capture window; a USB-side
+  `extras.running` marker now skips extras (and drops `extras.flag`) on the boot after an unfinished extras run.
+  - The same capture shows that an abrupt SoC reboot (no shutdown save: `ResumeInfo.ini` mtime stayed 17:00:25)
+    keeps the MCU clock (17:18 → 17:20/17:21, date 11-22 pushed at boot) and `SETUPMENU.ini`
+    (same md5 `c3474386…` in all 3 snapshots), and the EQ restores from saved settings. So a user report of
+    "reboots while driving **and** clock/DSP/radio reset" points to an MCU power-on reset (supply brown-out;
+    see the RstMemory notes in section 17), not a SoC software crash. *runtime + inferred*; the user's actual event was not captured.
 - Observations from these two boots (normal snapshot part):
   - Boot restores `audio.delay=0,…` to all channels, then ~0.4–0.5 s later something
     sets **channel 0x1 delay 1.0** (`ClientAppSetting.cpp setSpeakerDelay`). Seen on both

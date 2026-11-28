@@ -80,6 +80,7 @@ delay).
 | App-side MCU API | `libapis` | `MCUControl::*`, `send_mcu_power_status`, `send_mcu_mute` |
 | MCU callbacks into the app | `spapp/lib/module/default/libinfomodule.so` | `McuCallback::updateSystemPowerState` @ 0x41ef2fe4 (shutdown save path), `updateSystemRstMemory` @ 0x41ef3138 |
 | "Power state" / RstMemory flag | `libinfomodule` | `SetupExec::getSystemPowerState` @ 0x41ee6584 → byte 0x41f39854 |
+| Aug 12 2025 `libinfomodule` (md5 `6a5ce057…`, issue #6) | user-supplied | +8 shift from `exec_dimmer_state` on: RstMemory 0x41f3985c, patch B byte 0x41d33, patch C cave 0x41ef1d34 / site 0x41ef202c, `TABLES` 0x41f30288 (FINDINGS 18.2) |
 | DSP state engine (**live**, saved at shutdown) | `libinfomodule` | `SpeakerExec::*`, state blob 0x41f39c48 (+0x2b) → `ResumeInfo.ini` `[DSPOff Data]` (+0x0..0x26) / `[DSPOn Data]` (+0x27..0x2a). Save `DSPDataSave` @ 0x41ef9d40, restore `DSPDataResume` @ 0x41efa154 |
 
 ### SpeakerExec blob layout (base 0x41f39c48; FINDINGS 5.9)

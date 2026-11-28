@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from .firmware import lookup_firmware, supported_firmware_summary
 from .squashfs import STOCK_LIBINFOMODULE_MD5
 
 # Extra host-side redaction rules (defense in depth on top of gemn_auto.sh's sed pass)
@@ -50,6 +51,10 @@ class StickStatus:
     stock_lib_path: Optional[str] = None
     stock_lib_md5: Optional[str] = None
     stock_matches_x3_20250718: bool = False
+    stock_firmware_name: Optional[str] = None
+    stock_firmware_label: Optional[str] = None
+    stock_is_supported: bool = False
+    stock_tested_on_unit: bool = False
 
     x3patch_mode: str = ""
     x3patch_last_run: str = ""
@@ -79,12 +84,14 @@ class StickStatus:
     def human_summary(self) -> list[str]:
         lines: list[str] = []
         if self.stock_lib_path:
-            if self.stock_matches_x3_20250718:
-                lines.append("Stock library on stick: FOUND & verified (X3_20250718).")
+            if self.stock_is_supported and self.stock_firmware_label:
+                note = "" if self.stock_tested_on_unit else " (disassembly-verified, untested on hardware)"
+                lines.append(f"Stock library on stick: FOUND & supported ({self.stock_firmware_label}{note}).")
             else:
                 lines.append(
-                    f"Stock library on stick: FOUND, but MD5 ({self.stock_lib_md5}) does NOT match X3_20250718 "
-                    f"({STOCK_LIBINFOMODULE_MD5}). Do not install patches built for X3_20250718; export logs so we can check your firmware."
+                    f"Stock library on stick: FOUND, but MD5 ({self.stock_lib_md5}) is not a supported firmware yet.\n"
+                    f"Supported stock MD5s:\n{supported_firmware_summary()}\n"
+                    "Do not install library patches; export safe diagnostics and attach x3patch/stock/libinfomodule.so on GitHub."
                 )
         else:
             lines.append("Stock library on stick: not dumped yet.")
@@ -146,6 +153,12 @@ def inspect_usb_stick(usb_root: str | os.PathLike[str]) -> StickStatus:
         st.stock_lib_path = str(stock_p)
         st.stock_lib_md5 = hashlib.md5(stock_p.read_bytes()).hexdigest()
         st.stock_matches_x3_20250718 = st.stock_lib_md5 == STOCK_LIBINFOMODULE_MD5
+        fw = lookup_firmware(st.stock_lib_md5)
+        if fw is not None:
+            st.stock_firmware_name = fw.name
+            st.stock_firmware_label = fw.label
+            st.stock_is_supported = True
+            st.stock_tested_on_unit = fw.tested_on_unit
 
     # 2. Parse x3patch/mode and x3patch/log.txt
     st.x3patch_mode = _read_small_text(root / "x3patch" / "mode")
@@ -243,6 +256,7 @@ def export_safe_diagnostics_zip(
             "x3patch/mode",
             "x3patch/payload/BUILD.txt",
             "x3patch/payload/libinfomodule.so.md5",
+            "x3patch/payload/libinfomodule.so.stock_md5",
             "wifi40/log.txt",
             "wifi40/mode",
             "wifi40/auto_undone",

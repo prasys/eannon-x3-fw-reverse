@@ -4,19 +4,23 @@
 #
 #   build_payload.py <stock libinfomodule.so> <tables.json> <outdir> [--daynight]
 #
+# Supports both verified stock firmwares:
+#   - X3_20250718 (Jul 2025, md5 f00b52a739bb333307ee9a841bd02369)
+#   - X3_20250812 (Aug 12 2025 / 7047-XBB_UI02, md5 6a5ce057b32f19576dfd8b60645d3923)
+#
 # --daynight adds patch C (FINDINGS 15): loadSystemSettings no longer restores a saved night
 # state on the RstMemory==0 path; it calls exec_dimmer_state(0xa5) so the live ILL decides.
 # The code sits in the (dead with patch B) MCU-reset branch, so patch C requires patch B.
 #
 # tables.json is tools/strings/tables_final.json: {lang: [417 strings]}. Only strings that
 # differ from stock are written as overrides (nl has no table and is skipped). Writes
-# <outdir>/libinfomodule.so, .md5 and BUILD.txt, the layout usb-patch/x3patch/patch.sh expects.
+# <outdir>/libinfomodule.so, .md5, .stock_md5 and BUILD.txt, the layout x3patch/patch.sh expects.
 import hashlib, json, os, subprocess, sys
 
 STOCK_MD5 = 'f00b52a739bb333307ee9a841bd02369'
 PATCHB_OFF, PATCHB_OLD, PATCHB_NEW = 0x41d2b, 0x80, 0xb8   # beq.w -> b.w
 
-# patch C (day/night): all addresses are libinfomodule.so vaddrs, prelinked base 0x41eb0000 (file offset = vaddr - base)
+# Defaults (X3_20250718) kept for backwards-compatible imports (e.g. tools/apply_daynight.py)
 BASE = 0x41eb0000
 CAVE = 0x41ef1d2c                       # first insn after patch B's `b.w`: dead code
 SITE = 0x41ef2024                       # blx systemDimmerState; blx exec_dimmer_state_only (8 bytes)
@@ -25,6 +29,34 @@ PLT_SYSTEM_DIMMER_STATE = 0x41ee45e8
 PLT_EXEC_DIMMER_STATE_ONLY = 0x41ee4f54
 PLT_EXEC_DIMMER_STATE = 0x41ee54b8
 CAVE_REGION_LEN = 24
+
+FIRMWARES = {
+    'f00b52a739bb333307ee9a841bd02369': {
+        'name': 'X3_20250718',
+        'base': 0x41eb0000,
+        'patchb_off': 0x41d2b,
+        'cave': 0x41ef1d2c,
+        'site': 0x41ef2024,
+        'site_old': bytes.fromhex('f2f7e0eaf2f794ef'),
+        'plt_system_dimmer_state': 0x41ee45e8,
+        'plt_exec_dimmer_state_only': 0x41ee4f54,
+        'plt_exec_dimmer_state': 0x41ee54b8,
+        'tables_va': 0x41f30280,
+    },
+    '6a5ce057b32f19576dfd8b60645d3923': {
+        'name': 'X3_20250812',
+        'base': 0x41eb0000,
+        'patchb_off': 0x41d33,
+        'cave': 0x41ef1d34,
+        'site': 0x41ef202c,
+        'site_old': bytes.fromhex('f2f7dceaf2f790ef'),
+        'plt_system_dimmer_state': 0x41ee45e8,
+        'plt_exec_dimmer_state_only': 0x41ee4f54,
+        'plt_exec_dimmer_state': 0x41ee54b8,
+        'tables_va': 0x41f30288,
+    },
+}
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 STRTAB = os.path.join(HERE, 'strings', 'strtab.py')
 
@@ -42,25 +74,36 @@ def thumb_call(pc, target, blx):
     return hw1.to_bytes(2, 'little') + hw2.to_bytes(2, 'little')
 
 
-def patch_daynight(d):
+def detect_firmware_for_daynight(d):
+    """Detect which supported firmware a patch-B binary belongs to before applying patch C."""
+    for fw in FIRMWARES.values():
+        so = fw['site'] - fw['base']
+        if d[fw['patchb_off']] == PATCHB_NEW and bytes(d[so:so + 8]) == fw['site_old']:
+            return fw
+    raise AssertionError('not a supported patch-B payload (cannot locate patch C site)')
+
+
+def patch_daynight(d, fw=None):
     """restore path: if the saved state is night, exec_dimmer_state(0xa5); else exec_dimmer_state_only as before"""
-    c, o = CAVE, CAVE - BASE
-    assert d[PATCHB_OFF] == PATCHB_NEW, 'patch C needs patch B'
+    if fw is None:
+        fw = detect_firmware_for_daynight(d)
+    c, o = fw['cave'], fw['cave'] - fw['base']
+    assert d[fw['patchb_off']] == PATCHB_NEW, 'patch C needs patch B'
     code = bytearray()
     code += bytes.fromhex('08b5')                                                  # push {r3, lr}
-    code += thumb_call(c + len(code), PLT_SYSTEM_DIMMER_STATE, True)               # r0 = saved state 0xa5/0xa6
+    code += thumb_call(c + len(code), fw['plt_system_dimmer_state'], True)         # r0 = saved state 0xa5/0xa6
     code += bytes.fromhex('a628')                                                  # cmp r0, #0xa6
     code += bytes.fromhex('03d1')                                                  # bne +3 -> only
     code += bytes.fromhex('a520')                                                  # movs r0, #0xa5
-    code += thumb_call(c + len(code), PLT_EXEC_DIMMER_STATE, True)                 # night saved: go to day
+    code += thumb_call(c + len(code), fw['plt_exec_dimmer_state'], True)           # night saved: go to day
     code += bytes.fromhex('08bd')                                                  # pop {r3, pc}
-    code += thumb_call(c + len(code), PLT_EXEC_DIMMER_STATE_ONLY, True)            # day saved: as stock
+    code += thumb_call(c + len(code), fw['plt_exec_dimmer_state_only'], True)      # day saved: as stock
     code += bytes.fromhex('08bd')                                                  # pop {r3, pc}
     assert len(code) == CAVE_REGION_LEN, len(code)
     d[o:o + len(code)] = code
-    so = SITE - BASE
-    assert bytes(d[so:so + 8]) == SITE_OLD, 'call site is not the stock bytes'
-    d[so:so + 8] = thumb_call(SITE, CAVE, False) + bytes.fromhex('00bf00bf')       # bl cave; nop; nop
+    so = fw['site'] - fw['base']
+    assert bytes(d[so:so + 8]) == fw['site_old'], 'call site is not the stock bytes'
+    d[so:so + 8] = thumb_call(fw['site'], fw['cave'], False) + bytes.fromhex('00bf00bf')  # bl cave; nop; nop
 
 
 def md5(b):
@@ -75,10 +118,12 @@ def main():
     daynight = '--daynight' in sys.argv
     stock_p, tables_p, out = [a for a in sys.argv[1:] if not a.startswith('--')][:3]
     d = bytearray(open(stock_p, 'rb').read())
-    if md5(d) != STOCK_MD5:
-        sys.exit('refusing: not the stock X3_20250718 libinfomodule.so')
-    assert d[PATCHB_OFF] == PATCHB_OLD
-    d[PATCHB_OFF] = PATCHB_NEW
+    in_md5 = md5(d)
+    fw = FIRMWARES.get(in_md5)
+    if fw is None:
+        sys.exit('refusing: unsupported stock libinfomodule.so (%s)' % in_md5)
+    assert d[fw['patchb_off']] == PATCHB_OLD
+    d[fw['patchb_off']] = PATCHB_NEW
     os.makedirs(out, exist_ok=True)
     tmp = os.path.join(out, '.work')
     os.makedirs(tmp, exist_ok=True)
@@ -98,18 +143,19 @@ def main():
     strtab('build', pb, ov, so)    # strtab only accepts known builds, so patch C goes on afterwards
     if daynight:
         e = bytearray(open(so, 'rb').read())
-        patch_daynight(e)
+        patch_daynight(e, fw)
         open(so, 'wb').write(e)
     h = md5(open(so, 'rb').read())
     open(so + '.md5', 'w').write(h + '\n')
+    open(so + '.stock_md5', 'w').write(in_md5 + '\n')
     open(os.path.join(out, 'BUILD.txt'), 'w').write(
-        'input   libinfomodule.so md5 %s\npatches emperor-restore%s\nstrings %s (%d languages)\n'
-        'output  libinfomodule.so md5 %s, %d bytes\n' % (STOCK_MD5, ' daynight-ill' if daynight else '', os.path.basename(tables_p), len(over), h, os.path.getsize(so)))
+        'firmware %s\ninput   libinfomodule.so md5 %s\npatches emperor-restore%s\nstrings %s (%d languages)\n'
+        'output  libinfomodule.so md5 %s, %d bytes\n' % (fw['name'], in_md5, ' daynight-ill' if daynight else '', os.path.basename(tables_p), len(over), h, os.path.getsize(so)))
     for n in os.listdir(tmp):
         os.remove(os.path.join(tmp, n))
     os.rmdir(tmp)
     print(h)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

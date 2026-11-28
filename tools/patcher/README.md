@@ -1,6 +1,6 @@
 # Eanon X3 USB Patcher (GUI)
 
-A friendly, step-by-step desktop app for preparing Eanon X3 (`X3_20250718`) patch, diagnostic, and recovery USB sticks — **no Python, command line, or coding needed**.
+A friendly, step-by-step desktop app for preparing Eanon X3 (`X3_20250718` and `X3_20250812` / Aug 12 2025) patch, diagnostic, and recovery USB sticks — **no Python, command line, or coding needed**.
 
 ## For Windows Users (Standalone `.exe`)
 
@@ -23,7 +23,7 @@ A friendly, step-by-step desktop app for preparing Eanon X3 (`X3_20250718`) patc
 ## Safety Guarantees
 
 - Stock firmware on `/application` is **never modified**. Library patches live in `/media/flash/nvm` and can be removed at any time.
-- Every stock binary is MD5-verified (`f00b52a739bb333307ee9a841bd02369`) before patching; unsupported firmware versions are refused safely.
+- Every stock binary is MD5-verified against supported builds (`f00b52a739bb333307ee9a841bd02369` for `X3_20250718`, `6a5ce057b32f19576dfd8b60645d3923` for `X3_20250812`) before patching, and `x3patch/patch.sh` enforces a matching `libinfomodule.so.stock_md5` on the unit; unsupported firmware versions are refused safely.
 - All shell scripts and mode files are written with Unix LF (`\n`) line endings so they work reliably from Windows.
 - **Export Safe Diagnostics (.zip)** excludes raw `nvm/*.ini` backups and binary `.so` files, and redacts Wi-Fi passphrases, SSIDs, device names, serials, and MAC suffixes.
 

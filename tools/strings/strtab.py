@@ -20,10 +20,15 @@
 import json, struct, sys, hashlib
 
 LANGS = 'en zh-CN zh-TW ja nl fr it ko pt ru es th de ar id tr he el pl cs ro'.split()
-TABLES = 0x41f30280        # SetSystemLanguage/GetSystemString literal (decoded in FINDINGS 11)
+TABLES = 0x41f30280        # X3_20250718 SetSystemLanguage/GetSystemString literal (FINDINGS 11)
+TABLES_CANDIDATES = (0x41f30280, 0x41f30288)
 NSTR = 417
-KNOWN = {'f00b52a739bb333307ee9a841bd02369': 'stock',
-         'fae35255cfc28d530fa100af5cab4c4d': 'patch B'}
+KNOWN = {
+    'f00b52a739bb333307ee9a841bd02369': ('X3_20250718 stock', 0x41f30280),
+    'fae35255cfc28d530fa100af5cab4c4d': ('X3_20250718 patch B', 0x41f30280),
+    '6a5ce057b32f19576dfd8b60645d3923': ('X3_20250812 stock', 0x41f30288),
+    'b6e16e0272070e2bbe0cbd4f2ee8cc9d': ('X3_20250812 patch B', 0x41f30288),
+}
 R_ARM_RELATIVE = 23
 LRM = '\u200e'.encode()
 
@@ -64,17 +69,45 @@ class Elf:
         return self.sh[self.shname.index(name)]
 
 
-def tables(elf):
+def tables(elf, tables_va=TABLES):
     out = []
     for li in range(len(LANGS)):
-        t = elf.u32(TABLES + 4 * li)
-        out.append([TABLES + 4 * li, t])
+        t = elf.u32(tables_va + 4 * li)
+        out.append([tables_va + 4 * li, t])
     return out
 
 
-def extract(elf):
+def detect_tables_va(elf):
+    rel = rela_index(elf)
+    for cand in TABLES_CANDIDATES:
+        try:
+            tabs = tables(elf, cand)
+            # Slot 4 ('nl') is NULL; all other 20 languages have valid pointer tables in .rel.dyn
+            if tabs[4][1] != 0:
+                continue
+            ok = True
+            for i in range(len(LANGS)):
+                if i == 4:
+                    continue
+                slot_va, tbl_va = tabs[i]
+                if tbl_va == 0 or slot_va not in rel or tbl_va not in rel:
+                    ok = False
+                    break
+                add = struct.unpack_from('<i', elf.d, rel[slot_va] + 8)[0] & 0xffffffff
+                if add != tbl_va:
+                    ok = False
+                    break
+            if ok:
+                elf.cstr(elf.u32(tabs[0][1])).decode('utf-8')
+                return cand
+        except (ValueError, UnicodeDecodeError):
+            continue
+    raise SystemExit('could not detect string table address')
+
+
+def extract(elf, tables_va=TABLES):
     res = {}
-    for li, (_, t) in enumerate(tables(elf)):
+    for li, (_, t) in enumerate(tables(elf, tables_va)):
         res[LANGS[li]] = None if t == 0 else [elf.cstr(elf.u32(t + 4 * i)).decode('utf-8') for i in range(NSTR)]
     return res
 
@@ -90,10 +123,10 @@ def rela_index(elf):
     return idx
 
 
-def expand(ov, elf):
+def expand(ov, elf, tables_va=TABLES):
     """-> {lang: {id: final string}}. Per-language entries win over "*". The ar/he
     tables start every string with U+200E; keep that prefix on replacements."""
-    tabs = tables(elf)
+    tabs = tables(elf, tables_va)
     want = {}
     for lang, m in sorted(ov.items(), key=lambda kv: kv[0] != '*'):
         langs = [LANGS[li] for li, (_, t) in enumerate(tabs) if t] if lang == '*' else [lang]
@@ -110,9 +143,9 @@ def expand(ov, elf):
     return want
 
 
-def build(elf, want):
+def build(elf, want, tables_va=TABLES):
     rel = rela_index(elf)
-    tabs = tables(elf)
+    tabs = tables(elf, tables_va)
     rw = [p for p in elf.loads() if p[6] & 2]
     assert len(rw) == 1 and rw[0] is elf.loads()[-1]
     p = rw[0]
@@ -164,9 +197,11 @@ def build(elf, want):
     return len(edits), len(blob), blob_va
 
 
-def check(elf):
+def check(elf, tables_va=None):
+    if tables_va is None:
+        tables_va = detect_tables_va(elf)
     rel = rela_index(elf)
-    for li, (_, t) in enumerate(tables(elf)):
+    for li, (_, t) in enumerate(tables(elf, tables_va)):
         if not t:
             continue
         for i in range(NSTR):
@@ -181,20 +216,22 @@ def main():
     cmd, src = sys.argv[1], sys.argv[2]
     raw = open(src, 'rb').read()
     md5 = hashlib.md5(raw).hexdigest()
-    print('input', md5, KNOWN.get(md5, 'UNKNOWN'), file=sys.stderr)
-    if md5 not in KNOWN and cmd != 'check':
+    info = KNOWN.get(md5)
+    print('input', md5, info[0] if info else 'UNKNOWN', file=sys.stderr)
+    if info is None and cmd != 'check':
         sys.exit('refusing: not a known libinfomodule build')
     elf = Elf(raw)
+    tables_va = info[1] if info else None
     if cmd == 'extract':
-        json.dump(extract(elf), open(sys.argv[3], 'w'), ensure_ascii=False, indent=1)
+        json.dump(extract(elf, tables_va), open(sys.argv[3], 'w'), ensure_ascii=False, indent=1)
     elif cmd == 'build':
         ov = json.load(open(sys.argv[3], encoding='utf-8'))
-        want = expand(ov, elf)
-        n, size, va = build(elf, want)
+        want = expand(ov, elf, tables_va)
+        n, size, va = build(elf, want, tables_va)
         out = bytes(elf.d)
         e2 = Elf(out)
-        check(e2)
-        got = extract(e2)
+        check(e2, tables_va)
+        got = extract(e2, tables_va)
         for lang, m in want.items():
             for i, s in m.items():
                 assert got[lang][i] == s, (lang, i)
@@ -202,7 +239,7 @@ def main():
         print('%d slots repointed, blob %d bytes at %#x, out md5 %s'
               % (n, size, va, hashlib.md5(out).hexdigest()))
     elif cmd == 'check':
-        check(elf)
+        check(elf, tables_va)
         print('ok')
     else:
         sys.exit(__doc__)

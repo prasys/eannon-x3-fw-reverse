@@ -16,5 +16,19 @@
  "build": "python3 -I tools/apply_daynight.py <installed patch B payload> <outdir>   (or tools/build_payload.py ... --daynight for a from-stock build)",
  "delivery": "nvm library override (tools/usb-patch/x3patch); undo = reinstall the previous payload (saved by patch.sh as previous_libinfomodule.so.<ts>) or mode=uninstall (back to stock, which also drops patch B and the strings)",
  "evidence": "assembly (disassembly of the built file checked, only 31 bytes differ); installed 2026-10-26, owner reports Test 1 and Test 2 correct, DimmerState/DimmerLevel flips seen in snapshots (FINDINGS 15.9)",
- "known_risk": "if the ILL shadow (libapis 0x41dc680c) is still 0 when the tail runs and the first 0x37 also changes another bit, lights-on at start-up can stay day until the switch is toggled (FINDINGS 15.4 item 3)"
+ "known_risk": "if the ILL shadow (libapis 0x41dc680c) is still 0 when the tail runs and the first 0x37 also changes another bit, lights-on at start-up can stay day until the switch is toggled (FINDINGS 15.4 item 3)",
+ "ports": {
+  "X3_20250812": {
+   "docs": "docs/FINDINGS.md section 18.2",
+   "stock_md5": "6a5ce057b32f19576dfd8b60645d3923",
+   "patched_md5_with_tables_final": "e55d9270791f0402fa85975c6776dca0",
+   "changes": [
+    {"vaddr": "0x41ef202c", "file_offset": "0x4202c", "len": 8,
+     "old": "f2f7dceaf2f790ef", "new": "f7fffe82 bf00 bf00 (bl 0x41ef1d34; nop; nop)"},
+    {"vaddr": "0x41ef1d34", "file_offset": "0x41d34", "len": 24,
+     "meaning": "same cave logic using unchanged PLT stubs (0x41ee45e8 / 0x41ee54b8 / 0x41ee4f54)"}
+   ],
+   "evidence": "assembly (disassembly of built file checked, 31 bytes changed); untested on unit"
+  }
+ }
 }

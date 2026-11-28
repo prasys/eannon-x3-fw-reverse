@@ -10,10 +10,18 @@ on:
       - "tools/usb-patch/x3patch/patch.sh"
       - "tools/usb-patch/wifi40/wifi40.sh"
       - "tools/strings/tables_final.json"
+      - "tools/strings/strtab.py"
+      - "tools/build_payload.py"
       - ".github/workflows/build-patcher.yml"
   pull_request:
     paths:
       - "tools/patcher/**"
+      - "tools/usb-diag/gemn_auto.sh"
+      - "tools/usb-patch/x3patch/patch.sh"
+      - "tools/usb-patch/wifi40/wifi40.sh"
+      - "tools/strings/tables_final.json"
+      - "tools/strings/strtab.py"
+      - "tools/build_payload.py"
       - ".github/workflows/build-patcher.yml"
   workflow_dispatch:
 
@@ -80,14 +88,14 @@ jobs:
           body: |
             ## Eanon X3 USB Patcher (Windows x64)
 
-            Standalone GUI for preparing Eanon X3 (`X3_20250718`) patch, diagnostic, and recovery USB sticks — no Python or command line required.
+            Standalone GUI for preparing Eanon X3 (`X3_20250718` & `X3_20250812` / Aug 12 2025) patch, diagnostic, and recovery USB sticks — no Python or command line required.
 
             ### Quick Start
             1. Download **`EanonX3-Patcher-Windows-x64.exe`** below.
                *(Because the build is unsigned, Windows SmartScreen may show "Windows protected your PC" — click **More info → Run anyway**.)*
             2. Plug in a **FAT32 (MBR)** USB flash drive and run the app.
             3. Follow the 4 built-in steps:
-               - **Step 1:** Select your USB drive and either load `X3_20250718.zip` / `ISPBOOOT.BIN` **or** click **Prepare Read-Only Car Stick** to safely read the stock library & diagnostic logs directly from your head unit.
+               - **Step 1:** Select your USB drive and either load a firmware ZIP / `ISPBOOOT.BIN` / stock `.so` **or** click **Prepare Read-Only Car Stick** to safely read the stock library & diagnostic logs directly from your head unit.
                - **Step 2:** Toggle the patches you want (Emperor/DSP Restore, Day/Night ILL, UI Language Fixes, Wi-Fi 40 MHz) + optional deep diagnostics (`extras.flag`).
                - **Step 3:** Follow the in-car checklist, then inspect logs or click **Export Safe Diagnostics (.zip)** to attach redacted logs to a GitHub issue.
                - **Step 4:** 1-click **Undo / Restore Stock** at any time.

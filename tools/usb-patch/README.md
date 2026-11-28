@@ -12,8 +12,11 @@ x3patch/mode            install | uninstall | status
 x3patch/payload/libinfomodule.so
 x3patch/log.txt         written by the unit
 ```
-`patch.sh` refuses to install unless the unit's stock library has the expected md5
-(`f00b52a7…`, firmware X3_20250718) and the payload is a known build:
+`patch.sh` refuses to install unless the unit's stock library matches a supported firmware
+and matches the payload's target stock build (`payload/libinfomodule.so.stock_md5`, defaulting
+to `X3_20250718` for legacy sticks):
+
+### `X3_20250718` (stock `f00b52a739bb333307ee9a841bd02369`)
 
 | Payload | md5 |
 | --- | --- |
@@ -22,6 +25,15 @@ x3patch/log.txt         written by the unit
 | string fixes only (FINDINGS 11) | `c8fceef18c51ab983634744470663672` |
 | patch B + string fixes | `573843500395e13431fde51d2d5f1422` |
 | patch C (day/night, FINDINGS 15.8) on the installed B + strings payload | `13dc16cefa948c1cc9914a15ef6560b2` (accepted via its `.md5` sidecar; build with `tools/apply_daynight.py`). The md5 depends on the string tables: a from-stock build with `tools/build_payload.py --daynight` and `tables_final.json` gives `cf3cb416b72f7fb4d576e95095c2b7a7` (same code, different string bytes). The language build is a separate task |
+
+### `X3_20250812` / Aug 12 2025 `7047-XBB_UI02` (stock `6a5ce057b32f19576dfd8b60645d3923`, FINDINGS 18.2; *assembly, untested on unit*)
+
+| Payload | md5 |
+| --- | --- |
+| stock copy | `6a5ce057b32f19576dfd8b60645d3923` |
+| patch B (Emperor restore) | `b6e16e0272070e2bbe0cbd4f2ee8cc9d` |
+| patch B + `tables_final.json` string fixes | `e86ad71d591090a4bed9becb41f9f3ca` |
+| patch B + `tables_final.json` + patch C | `e55d9270791f0402fa85975c6776dca0` |
 
 String builds come from `tools/strings/strtab.py build <stock or patch B lib>
 tools/strings/overrides.json <out>`. If `overrides.json` changes, the md5 changes too:

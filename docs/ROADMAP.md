@@ -17,6 +17,11 @@
 > `extras.running` guard skips extras after an interrupted run. The reporter's firmware
 > differs from X3_20250718 (libinfomodule md5 `6a5ce057…`), so get their image before offering patches.
 
+> **Update (2026-11-28, issue #6 round 2, FINDINGS 18):** v1.0.1 extras ran clean. The driving restart was an MCU **and** SoC power loss
+> (MCU clock back to 00:00, no shutdown save, defaults written), so it's a supply/wiring problem, not software; next step is a voltage/wiring check
+> on the car. The user's Aug 12 2025 `libinfomodule` matches X3_20250718 apart from a +8 shift and one `powerOn()` store. B/C/strings port
+> coordinates are verified and added to the per-firmware registry (`patcher v1.1.0`, `build_payload.py`, `strtab.py`, `apply_daynight.py`, `patch.sh` with `stock_md5` binding); untested on hardware yet.
+
 Ordered by value and risk. Each item points to its evidence in `FINDINGS.md`.
 
 ## Bug 1: Emperor / DSP settings not remembered (top priority)

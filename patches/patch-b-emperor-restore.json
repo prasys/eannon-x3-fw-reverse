@@ -9,5 +9,17 @@
  "new_byte": "0xb8",
  "meaning": "00 f0 fc 80 (beq.w 0x41ef1f24) -> 00 f0 fc b8 (b.w 0x41ef1f24): SetupExec::loadSystemSettings always takes the restore path, even when the MCU RstMemory flag is set",
  "delivery": "nvm library override (tools/usb-patch/x3patch)",
- "evidence": "assembly (disassembly checked); behaviour on the unit not yet confirmed"
+ "evidence": "assembly (disassembly checked); behaviour on the unit not yet confirmed",
+ "ports": {
+  "X3_20250812": {
+   "docs": "docs/FINDINGS.md section 18.2",
+   "stock_md5": "6a5ce057b32f19576dfd8b60645d3923",
+   "patched_md5": "b6e16e0272070e2bbe0cbd4f2ee8cc9d",
+   "file_offset": "0x41d33",
+   "old_byte": "0x80",
+   "new_byte": "0xb8",
+   "meaning": "00 f0 fc 80 (beq.w 0x41ef1f2c) -> 00 f0 fc b8 (b.w 0x41ef1f2c): +8 shift from exec_dimmer_state onward",
+   "evidence": "assembly (disassembly of built file checked); untested on unit"
+  }
+ }
 }

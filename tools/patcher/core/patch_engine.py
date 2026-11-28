@@ -1,9 +1,9 @@
-"""Pure-Python patch builder for Eanon X3 `libinfomodule.so` (X3_20250718).
+"""Pure-Python patch builder for Eanon X3 `libinfomodule.so`.
 
-Supports any valid combination of the verified `libinfomodule.so` patches on `main`:
-  - Patch B: Emperor (DSP) restore (1 byte @ 0x41d2b, `beq.w` -> `b.w`)
-  - Patch C: Day/Night follows live ILL at boot (24-byte cave @ 0x41d2c + 8-byte call @ 0x42024)
-             Requires Patch B (uses the dead branch created by Patch B).
+Supports any valid combination of the verified `libinfomodule.so` patches across
+all firmwares registered in `tools/patcher/core/firmware.py`:
+  - Patch B: Emperor (DSP) restore (`beq.w` -> `b.w`)
+  - Patch C: Day/Night follows live ILL at boot (24-byte cave + 8-byte call site; requires Patch B)
   - UI Language String Fixes (20 language tables via ELF RELA + post-.bss string blob)
 
 Exact byte-for-byte parity with `tools/build_payload.py` and `tools/strings/strtab.py`.
@@ -16,27 +16,14 @@ import struct
 from dataclasses import dataclass
 from typing import Optional
 
+from .firmware import FirmwareProfile, lookup_firmware, supported_firmware_summary
 from .resources import tables_final_path
-from .squashfs import STOCK_LIBINFOMODULE_MD5
 
-# Patch B (FINDINGS 9)
-PATCHB_OFF = 0x41D2B
-PATCHB_OLD = 0x80
-PATCHB_NEW = 0xB8
-
-# Patch C (FINDINGS 15; prelinked base 0x41eb0000, file_off = vaddr - BASE)
-BASE = 0x41EB0000
-CAVE = 0x41EF1D2C
-SITE = 0x41EF2024
-SITE_OLD = bytes.fromhex("f2f7e0eaf2f794ef")
-PLT_SYSTEM_DIMMER_STATE = 0x41EE45E8
-PLT_EXEC_DIMMER_STATE_ONLY = 0x41EE4F54
-PLT_EXEC_DIMMER_STATE = 0x41EE54B8
+# Patch C constant length
 CAVE_REGION_LEN = 24
 
 # UI string tables (FINDINGS 11)
 LANGS = "en zh-CN zh-TW ja nl fr it ko pt ru es th de ar id tr he el pl cs ro".split()
-TABLES_VA = 0x41F30280
 NSTR = 417
 R_ARM_RELATIVE = 23
 LRM = "\u200e".encode("utf-8")
@@ -70,6 +57,8 @@ class BuiltPayload:
     build_txt: str
     applied_patches: list[str]
     strings_languages: int
+    firmware: FirmwareProfile
+    stock_md5: str
 
 
 def _md5(b: bytes | bytearray) -> str:
@@ -90,35 +79,36 @@ def _thumb_call(pc: int, target: int, blx: bool) -> bytes:
     return hw1.to_bytes(2, "little") + hw2.to_bytes(2, "little")
 
 
-def _apply_patch_b(d: bytearray) -> None:
-    if d[PATCHB_OFF] != PATCHB_OLD:
+def _apply_patch_b(d: bytearray, fw: FirmwareProfile) -> None:
+    if d[fw.patchb_off] != fw.patchb_old:
         raise PatchError(
-            f"Unexpected byte at Patch B offset {PATCHB_OFF:#x}: got {d[PATCHB_OFF]:#x}, expected {PATCHB_OLD:#x}"
+            f"Unexpected byte at Patch B offset {fw.patchb_off:#x}: "
+            f"got {d[fw.patchb_off]:#x}, expected {fw.patchb_old:#x}"
         )
-    d[PATCHB_OFF] = PATCHB_NEW
+    d[fw.patchb_off] = fw.patchb_new
 
 
-def _apply_patch_c(d: bytearray) -> None:
-    if d[PATCHB_OFF] != PATCHB_NEW:
+def _apply_patch_c(d: bytearray, fw: FirmwareProfile) -> None:
+    if d[fw.patchb_off] != fw.patchb_new:
         raise PatchError("Patch C requires Patch B to be applied first")
-    c, o = CAVE, CAVE - BASE
+    c, o = fw.patchc_cave, fw.patchc_cave - fw.base
     code = bytearray()
-    code += bytes.fromhex("08b5")                                        # push {r3, lr}
-    code += _thumb_call(c + len(code), PLT_SYSTEM_DIMMER_STATE, True)    # r0 = saved state 0xa5/0xa6
-    code += bytes.fromhex("a628")                                        # cmp r0, #0xa6
-    code += bytes.fromhex("03d1")                                        # bne +3 -> only
-    code += bytes.fromhex("a520")                                        # movs r0, #0xa5
-    code += _thumb_call(c + len(code), PLT_EXEC_DIMMER_STATE, True)      # night saved: go to day
-    code += bytes.fromhex("08bd")                                        # pop {r3, pc}
-    code += _thumb_call(c + len(code), PLT_EXEC_DIMMER_STATE_ONLY, True) # day saved: as stock
-    code += bytes.fromhex("08bd")                                        # pop {r3, pc}
+    code += bytes.fromhex("08b5")                                           # push {r3, lr}
+    code += _thumb_call(c + len(code), fw.plt_system_dimmer_state, True)    # r0 = saved state 0xa5/0xa6
+    code += bytes.fromhex("a628")                                           # cmp r0, #0xa6
+    code += bytes.fromhex("03d1")                                           # bne +3 -> only
+    code += bytes.fromhex("a520")                                           # movs r0, #0xa5
+    code += _thumb_call(c + len(code), fw.plt_exec_dimmer_state, True)      # night saved: go to day
+    code += bytes.fromhex("08bd")                                           # pop {r3, pc}
+    code += _thumb_call(c + len(code), fw.plt_exec_dimmer_state_only, True) # day saved: as stock
+    code += bytes.fromhex("08bd")                                           # pop {r3, pc}
     if len(code) != CAVE_REGION_LEN:
         raise PatchError(f"Patch C cave length mismatch: {len(code)}")
     d[o : o + len(code)] = code
-    so = SITE - BASE
-    if bytes(d[so : so + 8]) != SITE_OLD:
+    so = fw.patchc_site - fw.base
+    if bytes(d[so : so + 8]) != fw.patchc_site_old:
         raise PatchError("Patch C call site does not match stock bytes")
-    d[so : so + 8] = _thumb_call(SITE, CAVE, False) + bytes.fromhex("00bf00bf")
+    d[so : so + 8] = _thumb_call(fw.patchc_site, fw.patchc_cave, False) + bytes.fromhex("00bf00bf")
 
 
 # ---- ELF / String table manipulation (mirrors tools/strings/strtab.py) ----
@@ -160,13 +150,13 @@ class _Elf:
         return self.sh[self.shname.index(name)]
 
 
-def _strtab_tables(elf: _Elf) -> list[tuple[int, int]]:
-    return [(TABLES_VA + 4 * li, elf.u32(TABLES_VA + 4 * li)) for li in range(len(LANGS))]
+def _strtab_tables(elf: _Elf, tables_va: int) -> list[tuple[int, int]]:
+    return [(tables_va + 4 * li, elf.u32(tables_va + 4 * li)) for li in range(len(LANGS))]
 
 
-def _strtab_extract(elf: _Elf) -> dict[str, Optional[list[str]]]:
+def _strtab_extract(elf: _Elf, tables_va: int) -> dict[str, Optional[list[str]]]:
     res: dict[str, Optional[list[str]]] = {}
-    for li, (_, t) in enumerate(_strtab_tables(elf)):
+    for li, (_, t) in enumerate(_strtab_tables(elf, tables_va)):
         res[LANGS[li]] = None if t == 0 else [elf.cstr(elf.u32(t + 4 * i)).decode("utf-8") for i in range(NSTR)]
     return res
 
@@ -183,9 +173,9 @@ def _strtab_rela_index(elf: _Elf) -> dict[int, int]:
     return idx
 
 
-def _strtab_check(elf: _Elf) -> None:
+def _strtab_check(elf: _Elf, tables_va: int) -> None:
     rel = _strtab_rela_index(elf)
-    for li, (_, t) in enumerate(_strtab_tables(elf)):
+    for li, (_, t) in enumerate(_strtab_tables(elf, tables_va)):
         if not t:
             continue
         for i in range(NSTR):
@@ -196,10 +186,14 @@ def _strtab_check(elf: _Elf) -> None:
             elf.cstr(add).decode("utf-8")
 
 
-def _apply_ui_strings(data: bytearray, tables_json: dict[str, Optional[list[str]]]) -> tuple[bytearray, int]:
+def _apply_ui_strings(
+    data: bytearray,
+    tables_json: dict[str, Optional[list[str]]],
+    fw: FirmwareProfile,
+) -> tuple[bytearray, int]:
     elf = _Elf(data)
-    stock = _strtab_extract(elf)
-    tabs = _strtab_tables(elf)
+    stock = _strtab_extract(elf, fw.tables_va)
+    tabs = _strtab_tables(elf, fw.tables_va)
 
     # Match build_payload.py + strtab.py expand() ordering & LRM preservation
     want: dict[str, dict[int, str]] = {}
@@ -276,8 +270,8 @@ def _apply_ui_strings(data: bytearray, tables_json: dict[str, Optional[list[str]
 
     # Verify rebuilt ELF string tables round-trip cleanly
     check_elf = _Elf(d)
-    _strtab_check(check_elf)
-    got = _strtab_extract(check_elf)
+    _strtab_check(check_elf, fw.tables_va)
+    got = _strtab_extract(check_elf, fw.tables_va)
     for lang, m in want.items():
         for i, s in m.items():
             if got[lang][i] != s:
@@ -291,35 +285,36 @@ def build_libinfomodule(
     selection: PatchSelection,
     tables_json: Optional[dict[str, Optional[list[str]]]] = None,
 ) -> BuiltPayload:
-    """Build a patched `libinfomodule.so` from verified stock X3_20250718 bytes."""
+    """Build a patched `libinfomodule.so` from a supported stock firmware build."""
     selection.validate()
     if not selection.needs_libinfomodule:
         raise PatchError("No libinfomodule.so patches were selected.")
 
     in_md5 = _md5(stock_bytes)
-    if in_md5 != STOCK_LIBINFOMODULE_MD5:
+    fw = lookup_firmware(in_md5)
+    if fw is None:
         raise PatchError(
-            f"Refusing to patch: stock libinfomodule.so MD5 is {in_md5}, "
-            f"expected {STOCK_LIBINFOMODULE_MD5} (X3_20250718)."
+            f"Refusing to patch: stock libinfomodule.so MD5 is {in_md5}.\n"
+            f"Supported stock firmwares:\n{supported_firmware_summary()}"
         )
 
     d = bytearray(stock_bytes)
     applied: list[str] = []
 
     if selection.emperor_restore:
-        _apply_patch_b(d)
+        _apply_patch_b(d, fw)
         applied.append("emperor-restore")
 
     n_langs = 0
     if selection.ui_strings:
         if tables_json is None:
             tables_json = json.loads(tables_final_path().read_text(encoding="utf-8"))
-        d, n_langs = _apply_ui_strings(d, tables_json)
+        d, n_langs = _apply_ui_strings(d, tables_json, fw)
         applied.append("ui-strings")
 
     # Apply Patch C after string table rebuild (matches tools/build_payload.py)
     if selection.daynight_ill:
-        _apply_patch_c(d)
+        _apply_patch_c(d, fw)
         applied.append("daynight-ill")
 
     out_bytes = bytes(d)
@@ -327,7 +322,8 @@ def build_libinfomodule(
     strings_line = f"tables_final.json ({n_langs} languages)" if selection.ui_strings else "stock (unchanged)"
     patch_names = " ".join(p for p in applied if p != "ui-strings") or "none"
     build_txt = (
-        f"input   libinfomodule.so md5 {STOCK_LIBINFOMODULE_MD5}\n"
+        f"firmware {fw.name}\n"
+        f"input   libinfomodule.so md5 {fw.stock_md5}\n"
         f"patches {patch_names}\n"
         f"strings {strings_line}\n"
         f"output  libinfomodule.so md5 {out_md5}, {len(out_bytes)} bytes\n"
@@ -338,4 +334,6 @@ def build_libinfomodule(
         build_txt=build_txt,
         applied_patches=applied,
         strings_languages=n_langs,
+        firmware=fw,
+        stock_md5=fw.stock_md5,
     )

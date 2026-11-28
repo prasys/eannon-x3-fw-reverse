@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Callable, Optional
 
+from .firmware import STOCK_LIBINFOMODULE_MD5_20250718, FirmwareProfile, lookup_firmware
+
 # Verified coordinates from docs/FINDINGS.md section 1 & 2.3 (X3_20250718)
 SPAPP_OFFSET = 0x3780000
 SPAPP_SIZE = 0x7A6000
@@ -28,7 +30,7 @@ ISPBOOOT_MAGIC = b"XBUT"
 SQUASHFS_MAGIC = b"hsqs"
 
 STOCK_LIBINFOMODULE_PATH = "lib/module/default/libinfomodule.so"
-STOCK_LIBINFOMODULE_MD5 = "f00b52a739bb333307ee9a841bd02369"
+STOCK_LIBINFOMODULE_MD5 = STOCK_LIBINFOMODULE_MD5_20250718
 
 STOCK_LIBAPIS_PATH = "lib/libapis.so.1.0.0"
 STOCK_LIBAPIS_MD5 = "6f02e18a787acf3ce0e5afda3b7bfec5"
@@ -437,6 +439,11 @@ class StockLibraryResult:
     source_kind: str  # "zip", "ispbooot", "spapp", "so"
     source_path: str
     matches_x3_20250718: bool
+    firmware: Optional[FirmwareProfile] = None
+
+    @property
+    def is_supported(self) -> bool:
+        return self.firmware is not None
 
 
 def _extract_from_ispbooot_stream(
@@ -449,19 +456,47 @@ def _extract_from_ispbooot_stream(
     if magic != ISPBOOOT_MAGIC:
         raise FirmwareError("Not a valid Sunplus ISPBOOOT.BIN file (missing 'XBUT' header)")
 
-    stream.seek(SPAPP_OFFSET)
-    sq_magic = stream.read(4)
-    if sq_magic != SQUASHFS_MAGIC:
-        raise FirmwareError(
-            "Could not locate the spapp SquashFS partition at 0x3780000. "
-            "This image may be a different firmware version than X3_20250718."
-        )
+    stream.seek(0, os.SEEK_END)
+    total_size = stream.tell()
+
+    # Fast path: X3_20250718 puts spapp at 0x3780000
+    if total_size >= SPAPP_OFFSET + 96:
+        stream.seek(SPAPP_OFFSET)
+        if stream.read(4) == SQUASHFS_MAGIC:
+            if progress:
+                progress("Reading spapp SquashFS partition...")
+            reader = SquashFSReader(stream, base_offset=SPAPP_OFFSET)
+            try:
+                if progress:
+                    progress(f"Extracting {target_path}...")
+                return reader.read_file(target_path)
+            except FirmwareError:
+                pass
+
+    # Fallback: scan 0x1000-aligned SquashFS superblocks for shifted partition maps
     if progress:
-        progress("Reading spapp SquashFS partition...")
-    reader = SquashFSReader(stream, base_offset=SPAPP_OFFSET)
-    if progress:
-        progress(f"Extracting {target_path}...")
-    return reader.read_file(target_path)
+        progress("Scanning ISPBOOOT.BIN for spapp SquashFS partition...")
+    chunk_align = 0x1000
+    buf_size = 0x100000
+    for base in range(0, total_size, buf_size):
+        stream.seek(base)
+        buf = stream.read(buf_size)
+        for off in range(0, len(buf) - 96 + 1, chunk_align):
+            cand = base + off
+            if cand == SPAPP_OFFSET:
+                continue
+            if buf[off : off + 4] == SQUASHFS_MAGIC:
+                try:
+                    reader = SquashFSReader(stream, base_offset=cand)
+                    if progress:
+                        progress(f"Extracting {target_path} from offset {cand:#x}...")
+                    return reader.read_file(target_path)
+                except FirmwareError:
+                    continue
+
+    raise FirmwareError(
+        "Could not locate the spapp SquashFS partition or stock library inside ISPBOOOT.BIN."
+    )
 
 
 def load_stock_libinfomodule(
@@ -524,10 +559,12 @@ def load_stock_libinfomodule(
         )
 
     digest = hashlib.md5(data).hexdigest()
+    fw = lookup_firmware(digest)
     return StockLibraryResult(
         data=data,
         md5=digest,
         source_kind=kind,
         source_path=str(p),
         matches_x3_20250718=(digest == STOCK_LIBINFOMODULE_MD5),
+        firmware=fw,
     )

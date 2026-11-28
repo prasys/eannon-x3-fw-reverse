@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -14,6 +16,11 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[3])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+from tools.patcher.core.firmware import (
+    STOCK_LIBINFOMODULE_MD5_20250718,
+    STOCK_LIBINFOMODULE_MD5_20250812,
+    lookup_firmware,
+)
 from tools.patcher.core.patch_engine import PatchError, PatchSelection, build_libinfomodule
 from tools.patcher.core.resources import gemn_auto_script, tables_final_path, wifi40_script, x3patch_script
 from tools.patcher.core.squashfs import (
@@ -32,12 +39,13 @@ from tools.patcher.core.usb_writer import (
     prepare_uninstall_stick,
 )
 
-# Optional local firmware directory for real-image integration tests (gitignored, not in CI)
+# Optional local firmware / user-capture paths for real-image integration tests (gitignored, not in CI)
 _CANDIDATE_FW_DIRS = [
     Path(__file__).resolve().parents[3] / "fw",
     Path("/Users/pradeesh/orca/projects/eanon-fw/fw"),
 ]
 _FW_DIR = next((p for p in _CANDIDATE_FW_DIRS if (p / "X3_20250718.zip").is_file()), None)
+_AUG_SO = Path(__file__).resolve().parents[3] / "diag" / "issue6_round2" / "libinfomodule_aug2025.so"
 
 
 class TestResources(unittest.TestCase):
@@ -148,6 +156,20 @@ class TestLzoAndSquashFS(unittest.TestCase):
 
 
 class TestPatchValidation(unittest.TestCase):
+    def test_lookup_firmware_registry(self) -> None:
+        fw07 = lookup_firmware(STOCK_LIBINFOMODULE_MD5_20250718)
+        fw08 = lookup_firmware(STOCK_LIBINFOMODULE_MD5_20250812)
+        self.assertIsNotNone(fw07)
+        self.assertIsNotNone(fw08)
+        assert fw07 is not None and fw08 is not None
+        self.assertEqual(fw07.name, "X3_20250718")
+        self.assertTrue(fw07.tested_on_unit)
+        self.assertEqual(fw08.name, "X3_20250812")
+        self.assertFalse(fw08.tested_on_unit)
+        self.assertEqual(fw08.patchb_off, 0x41D33)
+        self.assertEqual(fw08.tables_va, 0x41F30288)
+        self.assertIsNone(lookup_firmware("0" * 32))
+
     def test_patch_c_requires_patch_b(self) -> None:
         sel = PatchSelection(emperor_restore=False, daynight_ill=True, ui_strings=False)
         with self.assertRaises(PatchError):
@@ -290,12 +312,143 @@ class TestUsbWriterAndInspector(unittest.TestCase):
         self.assertIn("01:23:45:xx:xx:xx", s)
 
 
+@unittest.skipIf(sys.platform == "win32" or shutil.which("sh") is None, "POSIX /bin/sh required")
+class TestPatchShShell(unittest.TestCase):
+    """Run tools/usb-patch/x3patch/patch.sh against a fake root via X3PATCH_TEST_ROOT."""
+
+    def _run_patch_sh(
+        self,
+        td: Path,
+        unit_stock_data: bytes,
+        payload_data: bytes,
+        mode: str = "install",
+        payload_md5: str | None = None,
+        stock_md5_file: str | None = None,
+    ) -> tuple[int, str, Path]:
+        fake_root = td / "unit"
+        usb = td / "usb"
+        x3 = usb / "x3patch"
+        (fake_root / "media" / "flash" / "nvm").mkdir(parents=True, exist_ok=True)
+        (fake_root / "application" / "lib" / "module" / "default").mkdir(parents=True, exist_ok=True)
+        (fake_root / "proc").mkdir(parents=True, exist_ok=True)
+        (fake_root / "proc" / "uptime").write_text("42.0 40.0\n", encoding="utf-8")
+        (fake_root / "application" / "lib" / "module" / "default" / "libinfomodule.so").write_bytes(unit_stock_data)
+
+        x3.mkdir(parents=True, exist_ok=True)
+        (x3 / "patch.sh").write_text(x3patch_script(), encoding="utf-8", newline="\n")
+        (x3 / "mode").write_text(mode + "\n", encoding="utf-8", newline="\n")
+        (x3 / "payload").mkdir(parents=True, exist_ok=True)
+        (x3 / "payload" / "libinfomodule.so").write_bytes(payload_data)
+        if payload_md5 is not None:
+            (x3 / "payload" / "libinfomodule.so.md5").write_text(payload_md5 + "\n", encoding="utf-8", newline="\n")
+        if stock_md5_file is not None:
+            (x3 / "payload" / "libinfomodule.so.stock_md5").write_text(stock_md5_file + "\n", encoding="utf-8", newline="\n")
+
+        # Provide minimal pidof + python-backed md5sum shim for macOS/CI compatibility
+        shim_bin = td / "bin"
+        shim_bin.mkdir(parents=True, exist_ok=True)
+        pidof_p = shim_bin / "pidof"
+        pidof_p.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        pidof_p.chmod(0o755)
+        if shutil.which("md5sum") is None:
+            md5sum_p = shim_bin / "md5sum"
+            md5sum_p.write_text(
+                f"#!/bin/sh\n{sys.executable} -I -c \"import hashlib,sys; print(hashlib.md5(open(sys.argv[1],'rb').read()).hexdigest() + '  ' + sys.argv[1])\" \"$1\"\n",
+                encoding="utf-8",
+            )
+            md5sum_p.chmod(0o755)
+
+        env = os.environ.copy()
+        env["X3PATCH_TEST_ROOT"] = str(fake_root)
+        env["PATH"] = f"{shim_bin}:{env.get('PATH', '')}"
+        proc = subprocess.run(["sh", str(x3 / "patch.sh")], env=env, capture_output=True, text=True, check=False)
+        log_text = (x3 / "log.txt").read_text(encoding="utf-8") if (x3 / "log.txt").is_file() else ""
+        return proc.returncode, log_text, fake_root / "media" / "flash" / "nvm" / "libinfomodule.so"
+
+    @staticmethod
+    def _dummy_for_md5(target_md5: str) -> bytes:
+        raise AssertionError("unused")
+
+    def test_stock_binding_and_uninstall(self) -> None:
+        # We can only test exact md5 matching if we have bytes with known stock md5s or via sidecars;
+        # use real stock binaries if available, otherwise verify rejection of unsupported unit stock.
+        if _FW_DIR is None or not _AUG_SO.is_file():
+            with tempfile.TemporaryDirectory() as td:
+                rc, log, target = self._run_patch_sh(Path(td), b"not_supported", b"payload")
+                self.assertNotEqual(rc, 0)
+                self.assertIn("not a supported firmware", log)
+                self.assertFalse(target.exists())
+            return
+
+        stock07 = load_stock_libinfomodule(_FW_DIR / "X3_20250718.zip").data
+        stock08 = _AUG_SO.read_bytes()
+        pay07 = build_libinfomodule(stock07, PatchSelection(emperor_restore=True, daynight_ill=True, ui_strings=True))
+        pay08 = build_libinfomodule(stock08, PatchSelection(emperor_restore=True, daynight_ill=True, ui_strings=True))
+
+        # 1. X3_20250718 payload installs on X3_20250718 stock
+        with tempfile.TemporaryDirectory() as td:
+            rc, log, target = self._run_patch_sh(
+                Path(td), stock07, pay07.binary, payload_md5=pay07.md5, stock_md5_file=pay07.stock_md5
+            )
+            self.assertEqual(rc, 0, log)
+            self.assertIn("install: OK", log)
+            self.assertEqual(hashlib.md5(target.read_bytes()).hexdigest(), pay07.md5)
+
+        # 2. X3_20250812 payload installs on X3_20250812 stock
+        with tempfile.TemporaryDirectory() as td:
+            rc, log, target = self._run_patch_sh(
+                Path(td), stock08, pay08.binary, payload_md5=pay08.md5, stock_md5_file=pay08.stock_md5
+            )
+            self.assertEqual(rc, 0, log)
+            self.assertIn("install: OK", log)
+            self.assertEqual(hashlib.md5(target.read_bytes()).hexdigest(), pay08.md5)
+
+        # 3. X3_20250718 payload on X3_20250812 stock -> ABORT
+        with tempfile.TemporaryDirectory() as td:
+            rc, log, target = self._run_patch_sh(
+                Path(td), stock08, pay07.binary, payload_md5=pay07.md5, stock_md5_file=pay07.stock_md5
+            )
+            self.assertNotEqual(rc, 0)
+            self.assertIn("ABORT: payload was built for stock md5", log)
+            self.assertFalse(target.exists())
+
+        # 4. X3_20250812 payload on X3_20250718 stock -> ABORT
+        with tempfile.TemporaryDirectory() as td:
+            rc, log, target = self._run_patch_sh(
+                Path(td), stock07, pay08.binary, payload_md5=pay08.md5, stock_md5_file=pay08.stock_md5
+            )
+            self.assertNotEqual(rc, 0)
+            self.assertIn("ABORT: payload was built for stock md5", log)
+            self.assertFalse(target.exists())
+
+        # 5. Legacy stick (no .stock_md5): installs on X3_20250718, aborts on X3_20250812
+        with tempfile.TemporaryDirectory() as td:
+            rc, log, target = self._run_patch_sh(Path(td), stock07, pay07.binary, payload_md5=pay07.md5, stock_md5_file=None)
+            self.assertEqual(rc, 0, log)
+            self.assertTrue(target.exists())
+            # Uninstall removes target
+            (Path(td) / "usb" / "x3patch" / "mode").write_text("uninstall\n", encoding="utf-8")
+            env = os.environ.copy()
+            env["X3PATCH_TEST_ROOT"] = str(Path(td) / "unit")
+            env["PATH"] = f"{Path(td) / 'bin'}:{env.get('PATH', '')}"
+            rc2 = subprocess.run(["sh", str(Path(td) / "usb" / "x3patch" / "patch.sh")], env=env, check=False).returncode
+            self.assertEqual(rc2, 0)
+            self.assertFalse(target.exists())
+
+        with tempfile.TemporaryDirectory() as td:
+            rc, log, target = self._run_patch_sh(Path(td), stock08, pay07.binary, payload_md5=pay07.md5, stock_md5_file=None)
+            self.assertNotEqual(rc, 0)
+            self.assertIn("ABORT: payload was built for stock md5", log)
+            self.assertFalse(target.exists())
+
+
 @unittest.skipIf(_FW_DIR is None, "Local firmware directory fw/ not present")
 class TestRealFirmwareIntegration(unittest.TestCase):
     def test_end_to_end_zip_to_usb_stick(self) -> None:
         assert _FW_DIR is not None
         res = load_stock_libinfomodule(_FW_DIR / "X3_20250718.zip")
         self.assertTrue(res.matches_x3_20250718)
+        self.assertTrue(res.is_supported)
         self.assertEqual(res.md5, STOCK_LIBINFOMODULE_MD5)
 
         # Patch B only
@@ -311,9 +464,95 @@ class TestRealFirmwareIntegration(unittest.TestCase):
             self.assertEqual(wr.payload.md5, "cf3cb416b72f7fb4d576e95095c2b7a7")
             so_on_usb = Path(td) / "x3patch" / "payload" / "libinfomodule.so"
             self.assertEqual(hashlib.md5(so_on_usb.read_bytes()).hexdigest(), "cf3cb416b72f7fb4d576e95095c2b7a7")
+            self.assertEqual(
+                (Path(td) / "x3patch" / "payload" / "libinfomodule.so.stock_md5").read_text(encoding="utf-8"),
+                STOCK_LIBINFOMODULE_MD5_20250718 + "\n",
+            )
             self.assertEqual((Path(td) / "x3patch" / "mode").read_bytes(), b"install\n")
             self.assertEqual((Path(td) / "wifi40" / "mode").read_bytes(), b"apply\n")
             self.assertTrue((Path(td) / "README_X3_PATCHER.txt").is_file())
+
+
+@unittest.skipIf(not _AUG_SO.is_file(), "Local Aug 2025 user library not present")
+class TestAug2025Integration(unittest.TestCase):
+    def test_aug2025_builds_usb_and_cli_parity(self) -> None:
+        res = load_stock_libinfomodule(_AUG_SO)
+        self.assertTrue(res.is_supported)
+        self.assertFalse(res.matches_x3_20250718)
+        self.assertIsNotNone(res.firmware)
+        assert res.firmware is not None
+        self.assertEqual(res.firmware.name, "X3_20250812")
+        self.assertEqual(res.md5, STOCK_LIBINFOMODULE_MD5_20250812)
+
+        # Patch B only
+        pb = build_libinfomodule(res.data, PatchSelection(emperor_restore=True, daynight_ill=False, ui_strings=False))
+        self.assertEqual(pb.md5, "b6e16e0272070e2bbe0cbd4f2ee8cc9d")
+
+        # Patch B + Strings
+        pbs = build_libinfomodule(res.data, PatchSelection(emperor_restore=True, daynight_ill=False, ui_strings=True))
+        self.assertEqual(pbs.md5, "e86ad71d591090a4bed9becb41f9f3ca")
+
+        # Patch B + C + Strings
+        pbsc = build_libinfomodule(res.data, PatchSelection(emperor_restore=True, daynight_ill=True, ui_strings=True))
+        self.assertEqual(pbsc.md5, "e55d9270791f0402fa85975c6776dca0")
+
+        # Exact parity with tools/build_payload.py, tools/apply_daynight.py, and tools/strings/strtab.py check
+        repo_root = Path(_REPO_ROOT)
+        with tempfile.TemporaryDirectory() as td:
+            td_p = Path(td)
+            out_b = td_p / "cli_b"
+            out_bc = td_p / "cli_bc"
+            out_dn = td_p / "cli_dn"
+            subprocess.run(
+                [
+                    sys.executable, "-I", str(repo_root / "tools" / "build_payload.py"),
+                    str(_AUG_SO), str(repo_root / "tools" / "strings" / "tables_final.json"), str(out_b),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            self.assertEqual((out_b / "libinfomodule.so.md5").read_text(encoding="utf-8").strip(), pbs.md5)
+            self.assertEqual((out_b / "libinfomodule.so.stock_md5").read_text(encoding="utf-8").strip(), STOCK_LIBINFOMODULE_MD5_20250812)
+
+            subprocess.run(
+                [
+                    sys.executable, "-I", str(repo_root / "tools" / "build_payload.py"),
+                    str(_AUG_SO), str(repo_root / "tools" / "strings" / "tables_final.json"), str(out_bc), "--daynight",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            self.assertEqual((out_bc / "libinfomodule.so.md5").read_text(encoding="utf-8").strip(), pbsc.md5)
+
+            subprocess.run(
+                [
+                    sys.executable, "-I", str(repo_root / "tools" / "apply_daynight.py"),
+                    str(out_b / "libinfomodule.so"), str(out_dn),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            self.assertEqual((out_dn / "libinfomodule.so.md5").read_text(encoding="utf-8").strip(), pbsc.md5)
+
+            subprocess.run(
+                [sys.executable, "-I", str(repo_root / "tools" / "strings" / "strtab.py"), "check", str(out_bc / "libinfomodule.so")],
+                check=True,
+                capture_output=True,
+            )
+
+            # USB stick write + inspect round-trip
+            usb = td_p / "usb"
+            usb.mkdir()
+            (usb / "x3patch" / "stock").mkdir(parents=True)
+            shutil.copy2(_AUG_SO, usb / "x3patch" / "stock" / "libinfomodule.so")
+            wr = prepare_install_stick(usb, PatchSelection(emperor_restore=True, daynight_ill=True, ui_strings=True), stock_bytes=res.data)
+            assert wr.payload is not None
+            self.assertEqual(wr.payload.md5, pbsc.md5)
+            self.assertEqual((usb / "x3patch" / "payload" / "libinfomodule.so.stock_md5").read_text(encoding="utf-8"), STOCK_LIBINFOMODULE_MD5_20250812 + "\n")
+            st = inspect_usb_stick(usb)
+            self.assertTrue(st.stock_is_supported)
+            self.assertEqual(st.stock_firmware_name, "X3_20250812")
+            self.assertFalse(st.stock_tested_on_unit)
 
 
 if __name__ == "__main__":

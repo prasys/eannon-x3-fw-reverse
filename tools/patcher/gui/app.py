@@ -16,8 +16,9 @@ from typing import Callable, Optional
 import customtkinter as ctk
 
 from .. import __version__
+from ..core.firmware import supported_firmware_summary
 from ..core.patch_engine import PatchSelection
-from ..core.squashfs import STOCK_LIBINFOMODULE_MD5, FirmwareError, StockLibraryResult, load_stock_libinfomodule
+from ..core.squashfs import FirmwareError, StockLibraryResult, load_stock_libinfomodule
 from ..core.stick_inspector import StickStatus, export_safe_diagnostics_zip, inspect_usb_stick
 from ..core.usb_drives import DriveInfo, inspect_target_folder, list_usb_drives
 from ..core.usb_writer import (
@@ -111,7 +112,7 @@ class X3PatcherApp(ctk.CTk):
 
         ctk.CTkLabel(
             sidebar,
-            text="Firmware X3_20250718\nUSB Patch & Diagnostics",
+            text="Supported: X3_20250718,\nX3_20250812 (Aug 2025)",
             font=ctk.CTkFont(size=12),
             text_color=MUTED_FG,
             justify="left",
@@ -306,7 +307,7 @@ class X3PatcherApp(ctk.CTk):
         )
         ctk.CTkLabel(
             opt1,
-            text="Accepts X3_20250718.zip, ISPBOOOT.BIN, spapp.bin, or stock libinfomodule.so. Extracted automatically — no extra tools needed.",
+            text="Accepts firmware ZIP (e.g. X3_20250718.zip), ISPBOOOT.BIN, spapp.bin, or stock libinfomodule.so (Jul 2025 / Aug 12 2025). Extracted automatically — no extra tools needed.",
             font=ctk.CTkFont(size=12),
             text_color=MUTED_FG,
             wraplength=500,
@@ -779,7 +780,7 @@ class X3PatcherApp(ctk.CTk):
 
     def _choose_firmware_file(self) -> None:
         path = filedialog.askopenfilename(
-            title="Select X3_20250718.zip, ISPBOOOT.BIN, spapp.bin, or stock libinfomodule.so",
+            title="Select Firmware ZIP, ISPBOOOT.BIN, spapp.bin, or stock libinfomodule.so",
             filetypes=[
                 ("Eanon X3 Firmware / Library", "*.zip *.BIN *.bin *.so"),
                 ("All files", "*.*"),
@@ -798,20 +799,22 @@ class X3PatcherApp(ctk.CTk):
 
     def _on_firmware_loaded(self, res: object) -> None:
         assert isinstance(res, StockLibraryResult)
-        if res.matches_x3_20250718:
+        if res.is_supported and res.firmware is not None:
+            fw = res.firmware
+            note = "" if fw.tested_on_unit else " — disassembly-verified, first on-unit test"
             self._stock_result = res
             self._fw_status_label.configure(
-                text=f"Stock library READY ({res.source_kind.upper()} verified — MD5 {res.md5})",
+                text=f"Stock library READY: {fw.label} ({res.source_kind.upper()} verified — MD5 {res.md5}{note})",
                 fg_color=SUCCESS_BG,
                 text_color=SUCCESS_FG,
             )
-            self._status_label.configure(text="Stock X3_20250718 libinfomodule.so verified and loaded!")
+            self._status_label.configure(text=f"Stock {fw.name} libinfomodule.so verified and loaded!")
         else:
             self._stock_result = None
             self._fw_status_label.configure(
                 text=(
-                    f"MISMATCH: extracted libinfomodule.so MD5 is {res.md5}, expected {STOCK_LIBINFOMODULE_MD5} (X3_20250718). "
-                    "Refusing to patch a different firmware build."
+                    f"UNSUPPORTED BUILD: extracted libinfomodule.so MD5 is {res.md5}. "
+                    "Refusing to patch an unverified firmware build."
                 ),
                 fg_color=ERR_BG,
                 text_color=ERR_FG,
@@ -819,9 +822,9 @@ class X3PatcherApp(ctk.CTk):
             messagebox.showerror(
                 "Unsupported Firmware Version",
                 f"The extracted libinfomodule.so has MD5:\n{res.md5}\n\n"
-                f"Expected X3_20250718 stock MD5:\n{STOCK_LIBINFOMODULE_MD5}\n\n"
-                "To keep your head unit safe, this app will not patch a different firmware build. "
-                "You can still use Wi-Fi 40 MHz or prepare a read-only Diagnostics Stick to share logs on GitHub.",
+                f"Supported stock MD5s:\n{supported_firmware_summary()}\n\n"
+                "To keep your head unit safe, this app will not patch an unverified firmware build. "
+                "You can still use Wi-Fi 40 MHz or prepare a read-only Diagnostics Stick to share logs and stock libinfomodule.so on GitHub.",
             )
 
     def _on_emperor_toggled(self) -> None:
@@ -876,9 +879,9 @@ class X3PatcherApp(ctk.CTk):
         if sel.needs_libinfomodule and self._stock_result is None:
             messagebox.showwarning(
                 "Stock Firmware Needed",
-                "The selected library patches need your stock X3_20250718 libinfomodule.so.\n\n"
+                "The selected library patches need your stock libinfomodule.so (X3_20250718 or X3_20250812).\n\n"
                 "Go to Step 1 and either:\n"
-                "  • Choose X3_20250718.zip / ISPBOOOT.BIN, OR\n"
+                "  • Choose your firmware ZIP / ISPBOOOT.BIN / stock .so, OR\n"
                 "  • Click 'Prepare Read-Only Car Stick' to dump it safely from your car first.",
             )
             self._show_page("setup")
@@ -952,7 +955,7 @@ class X3PatcherApp(ctk.CTk):
         def work() -> tuple[StickStatus, Optional[StockLibraryResult]]:
             st = inspect_usb_stick(usb)
             auto_stock: Optional[StockLibraryResult] = None
-            if st.stock_lib_path and st.stock_matches_x3_20250718 and self._stock_result is None:
+            if st.stock_lib_path and st.stock_is_supported and self._stock_result is None:
                 try:
                     auto_stock = load_stock_libinfomodule(st.stock_lib_path)
                 except FirmwareError:
@@ -970,18 +973,20 @@ class X3PatcherApp(ctk.CTk):
         assert isinstance(st, StickStatus)
         self._stick_status = st
 
-        if auto_stock is not None and auto_stock.matches_x3_20250718:
+        if auto_stock is not None and auto_stock.is_supported and auto_stock.firmware is not None:
+            fw = auto_stock.firmware
+            note = "" if fw.tested_on_unit else " — disassembly-verified, first on-unit test"
             self._stock_result = auto_stock
             self._fw_status_label.configure(
-                text=f"Auto-loaded stock library from USB stick! (X3_20250718 verified — MD5 {auto_stock.md5})",
+                text=f"Auto-loaded stock library from USB stick: {fw.label} (MD5 {auto_stock.md5}{note})",
                 fg_color=SUCCESS_BG,
                 text_color=SUCCESS_FG,
             )
-        elif st.stock_lib_path and not st.stock_matches_x3_20250718 and self._stock_result is None:
+        elif st.stock_lib_path and not st.stock_is_supported and self._stock_result is None:
             self._fw_status_label.configure(
                 text=(
-                    f"Stock library found on stick, but MD5 ({st.stock_lib_md5}) does NOT match X3_20250718. "
-                    "Export diagnostics in Step 3 so we can check your firmware version."
+                    f"Stock library found on stick, but MD5 ({st.stock_lib_md5}) is not a supported firmware yet. "
+                    "Export diagnostics in Step 3 and attach x3patch/stock/libinfomodule.so on GitHub."
                 ),
                 fg_color=ERR_BG,
                 text_color=ERR_FG,

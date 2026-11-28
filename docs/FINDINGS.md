@@ -915,3 +915,61 @@ Credit: the scheme and flash layout come from **kagaimiq/jielie** (`misc/cipher.
 - **0x75** handler (0x0100e0f0): control flow only (returns if flag [..+0x55]==0, else sets [..+0x57]=7, branches on P1 0/1/3). What it does is not established. Still never send it.
 - Safety unchanged: decryption is read-only. Re-encrypting and flashing a modified MCU image is **not** in scope without an explicit go-ahead
   and a recovery plan; never send cmd 0x75.
+
+## 18. Issue #6 round 2: driving restart captured; Aug 12 2025 `libinfomodule.so` diffed (2026-11-28)
+Inputs (gitignored, `diag/issue6_round2/`): the user's patcher "Safe Diagnostics Export" zip (v1.0.1 stick, plugged in before
+driving, left in until the first stop) and their `libinfomodule.so` (APP `7047-XBB_UI02_Aug 12 2025`, kernel `4.9.217 #1 Tue Aug 12 19:39:01 CST 2025`).
+Full md5 `6a5ce057b32f19576dfd8b60645d3923`, 536136 bytes (stock X3_20250718: `f00b52a7…`, 536128 bytes). *parsed*
+
+### 18.1 Capture: what the two boots show
+- Two snapshots, two boots: `3c8f3913` (cold start, unit clock 2026-11-23 19:41, uptime 39 s) and `ff5ee2d3` (the restart,
+  clock **2022-01-01 00:00:06**, uptime 15.7 s). Only **one** restart is in this capture; boot `ff5ee2d3` then ran ≥15 min
+  (its `sta watch: no phone joined within 15 min` line is there). *runtime*
+- **v1.0.1 extras finished cleanly on both boots**: `step hw done`, `step getprop done`, `capture window start/end`, `done`;
+  no `extras skipped` line, so `extras.running` was removed. Boot `3c8f3913` died **after** `done` (19:42:09, uptime ≈72 s) and
+  **before** its 15-min `sta watch` line, i.e. 1–15 min after start. The tool was idle then (only `logcat -f` and a 5 s
+  `hostapd_cli status` poll, which ran 15 min on the next boot without trouble). Not tool-induced. *runtime + inferred*
+- **MCU power-on reset signature on the restart boot** (the SoC sets its clock from the MCU, `ResourceManager` lines):
+  - boot 1: wall clock jumps `01-01 00:00:08` → `01-01 19:41:00` (MCU time) → `11-23 19:41:00` (MCU date). *runtime (logcat)*
+  - boot 2: jumps `01-01 00:00:08` → `01-01 00:00:00` and no date push follows; `date` = `Sat Jan 1 00:00:06 UTC 2022`. The MCU clock
+    read 00:00, so it had just restarted from its default. Matches section 17 (clock default only when the MCU's reset source is not LVD/WDT). *runtime + assembly (17)*
+  - `SETUPMENU.ini` rewritten with mtime `2022-01-01 00:00:00`: `system.EqMode` 7→0, `system.SrcId` usb→radio, `[MainVolume] S+AuxIn_APP` 6→9;
+    loudness applied `Freq=800` vs `Freq=400` on boot 1. That is the defaults path (RstMemory≠0, section 9/5.2), not a saved-settings restore. *runtime; RstMemory value itself not logged*
+  - `ResumeInfo.ini` mtime stayed `2026-11-23 05:50:34` (md5 `b7e8f483…` both boots): boot 1 ended with **no shutdown save**. *runtime*
+  - Contrast round 1 (section 8 update 2026-11-23): an abrupt SoC-only reboot kept the MCU clock and `SETUPMENU.ini`. So here both
+    the MCU and the SoC lost power: a supply-level event (B+/ground/brown-out), not a Launcher/mcusrv/kernel crash. *inferred*
+- No crash evidence on the SoC side: dmesg ring (truncated) has no watchdog/OOM/panic/thermal lines; `sp_wd_usr -t 11` running on both boots;
+  MemAvailable ~14 MB both boots; `/proc/interrupts` UART counts normal. The ring buffers only cover each boot's first minute, so the
+  moment of failure is not captured. *runtime*
+- Odd but unexplained: `/proc/cpuinfo` BogoMIPS **54.00** on boot 1 vs **27.00** on the restart boot. With the arch-timer delay loop BogoMIPS
+  follows the timer frequency the boot loader programs, so the restart came up through a different early-boot path or clock setup.
+  Wall-clock vs uptime advance was consistent on both boots. No baseline from other captures. *runtime; meaning inferred*
+- "Twice every cold morning, then fine all day": not reproduced (one restart here). It fits a temperature- or load-dependent supply fault
+  (connection, fuse/ground, or the unit's own DC-DC input) that clears once the car warms up. Software can't explain the MCU losing its clock. *inferred*
+
+### 18.2 Aug 12 2025 `libinfomodule.so` vs X3_20250718
+- Same prelink base (0x41eb0000, `.hash` @ 0x41eb00d4), same 633 dynamic symbols, same `.rel.dyn` size (0x19d4c, RELA entsize 12).
+  `.text` is 8 bytes longer (0x15f58 → 0x15f60); everything from `SetupExec::exec_dimmer_state` (0x41eee2e0 → 0x41eee2e8) onward,
+  `.rodata`, `.data.rel.ro`, `.got`, `.data`, `.bss` moves by **+8** (vaddr and file offset). PLT unchanged. *parsed (objdump -h/-T)*
+- **Only behavioural change: `SetupExec::powerOn()`** (0x41eee0c4, size 0x21c → 0x224) adds `movs r3,#0; str r3,[r6,#8]` at 0x41eee138/0x41eee13a,
+  right after `send_mcu_system_power(1)` and `CurPowerState=1` (`strb 1,[obj,#0xc]`). obj = the SetupExec static block at .bss+8
+  (stock 0x41f39850, Aug 0x41f39858); +8 is the word read by `getSystemPanelTimerCnt()`, `SetPanelBlack*` and `MCUSystemDimmerCtrl::updateDimmerSlot`.
+  So power-on now resets the panel-black timer. Nothing touches RstMemory (+4), the MCU reset path, DSP or day/night. *assembly; purpose inferred*
+- Everything else is recompile noise: `.rodata` byte-identical (shifted +8); `.data.rel.ro`/`.got`/`.data` differ only by +8 pointers; ~110 qDebug
+  source-line constants are +1 (one source line added); some scheduling/register-allocation differences in `parseUsbInfo`, `getUSBBusByName`,
+  `getUSBIdProductByName`, `getUSBNameByBus`, `findMissingModules`. All 427 `.text` functions have identical multisets of resolved PLT calls,
+  internal calls and string references. `.dynamic` differs in 2 words, probably prelink timestamp/checksum. *assembly (scripted diff)*
+- **Porting coordinates (Aug build):**
+  - RstMemory byte 0x41f3985c; `loadSystemSettings` @ 0x41ef1cd8; `getSystemPowerState` @ 0x41ee6584 (unchanged, before the shift). *assembly*
+  - Patch B: `beq.w 0x41ef1f2c` at **0x41ef1d30**, bytes `00 f0 fc 80`; patch byte file **0x41d33** `0x80`→`0xb8`. *assembly*
+  - Patch C: cave **0x41ef1d34** (file 0x41d34, 24 B, no branch targets inside); site **0x41ef202c** (file 0x4202c), old bytes
+    `f2f7dceaf2f790ef` (`blx 0x41ee45e8 systemDimmerState; blx 0x41ee4f54 exec_dimmer_state_only`); `PLT_EXEC_DIMMER_STATE` 0x41ee54b8
+    (all three PLT stubs unchanged, GOT relocs resolve to the same symbols). *assembly*
+  - Strings: `TABLES` **0x41f30288** (SetSystemLanguage/GetSystemString literal); 21 slots × 417 extract identical to stock; `strtab.check` passes. *parsed*
+  - Trial build in a scratch dir only (repo `build_payload`/`strtab` functions with the constants above, `tables_final.json`): B →
+    `b6e16e0272070e2bbe0cbd4f2ee8cc9d`; B+strings (4826 slots, blob 204684 B at 0x41f39cb0, 741944 B) → `e86ad71d591090a4bed9becb41f9f3ca`;
+    B+strings+C (31 bytes changed, same as stock) → `e55d9270791f0402fa85975c6776dca0`. Disassembly of the result checked. Not tested on a unit. *parsed + assembly*
+- Multi-firmware support (patcher v1.1.0, 2026-11-28): `tools/patcher/core/firmware.py`, `tools/build_payload.py`,
+  `tools/strings/strtab.py`, `tools/apply_daynight.py` and `tools/usb-patch/x3patch/patch.sh` now key coordinates and known builds
+  by stock md5 (`X3_20250718` `f00b52a7…` + `X3_20250812` `6a5ce057…`), with `libinfomodule.so.stock_md5` preventing cross-firmware
+  installs. Other Aug libs (e.g. `libsetupmodule` for patch A) are not yet available to check.

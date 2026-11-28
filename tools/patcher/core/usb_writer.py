@@ -147,7 +147,7 @@ def prepare_install_stick(
     if selection.needs_libinfomodule:
         if stock_bytes is None:
             raise UsbWriteError(
-                "A verified stock libinfomodule.so (from X3_20250718.zip, ISPBOOOT.BIN, or your car stick) "
+                "A verified stock libinfomodule.so (from firmware zip/image or your car stick) "
                 "is required for the selected patches."
             )
         if progress:
@@ -171,16 +171,23 @@ def prepare_install_stick(
         if disk_md5 != payload.md5:
             raise UsbWriteError(f"USB write verification failed: wrote {payload.md5}, read back {disk_md5}")
         _write_lf(payload_dir / "libinfomodule.so.md5", payload.md5 + "\n")
+        _write_lf(payload_dir / "libinfomodule.so.stock_md5", payload.stock_md5 + "\n")
         _write_lf(payload_dir / "BUILD.txt", payload.build_txt)
         _write_lf(root / "x3patch" / "mode", "install\n")
         written.extend(
             [
                 "x3patch/payload/libinfomodule.so",
                 "x3patch/payload/libinfomodule.so.md5",
+                "x3patch/payload/libinfomodule.so.stock_md5",
                 "x3patch/payload/BUILD.txt",
                 "x3patch/mode",
             ]
         )
+        summary.append(f"Target firmware: {payload.firmware.label}")
+        if not payload.firmware.tested_on_unit:
+            summary.append(
+                "Note: this firmware port is disassembly-verified and untested on hardware — keep an Uninstall stick handy"
+            )
         if selection.emperor_restore:
             summary.append("Patch B: Emperor / DSP Restore Fix (survives cold boots / MCU memory resets)")
         if selection.daynight_ill:
